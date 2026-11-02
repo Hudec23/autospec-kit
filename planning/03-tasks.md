@@ -28,6 +28,14 @@ For every service, commit a minimal skeleton so phase 2 starts from a green buil
 Once for the whole system:
 - a pinned `Dockerfile` per service and a root `docker-compose.yml` that starts the system,
 - `plan/services/integration.yaml` whose commands run `tests/e2e/` against that compose file.
+- every infra container the tests use (database, cache, queue, object store, vector store, in
+  the dev/test compose too) has a `healthcheck`, and everything that needs it waits with
+  `depends_on: { condition: service_healthy }` — never `service_started`, which hides a container
+  that crashes on boot. Mind images that run as non-root: a `tmpfs` or volume must be writable by
+  that uid (e.g. `tmpfs: ["/data:uid=10001,gid=10001"]`).
+- one baseline smoke test per service that really talks to each of those containers (write and
+  read back one row / key / object / point), so broken test infra fails before phase 2, not in
+  the first task that needs it.
 
 Run them. Do not continue until every service is green.
 

@@ -40,7 +40,22 @@ Run each `planning/` prompt in Claude Code, in order (step 3 builds and runs cod
 
 ### Phase 2 — unattended build
 
-Use your runner (e.g. opencode-docker) to execute the tasks in `plan/tasks/` in dependency order. opencode picks up `AGENTS.md` from the project root automatically — no runner configuration needed.
+`scripts/autospec-run.py` drives the build. It runs on the host (python3 stdlib, git, Docker) and, for each pending task whose dependencies are done:
+
+1. starts a fresh opencode session for that one task through your sandbox runner — called as `<runner> --project <repo> --keep -- run "<task prompt>"`, the interface of [opencode-docker](https://github.com/Hudec23/opencode-docker)'s `run.sh`,
+2. reverts any change outside the task's `edit:` list,
+3. runs the task's `verify:` / `expect_fail:` commands itself — the agent never grades its own work,
+4. commits on green and marks the task `done`; otherwise retries with the failing output as feedback (`.autospec/runs/<task>/feedback.txt`), then marks it `blocked` (dependents become `skipped`).
+
+```sh
+export AUTOSPEC_RUNNER=~/path/to/opencode-docker/run.sh
+python3 scripts/autospec-run.py --dry-run          # show order and status
+python3 scripts/autospec-run.py --only T-api-001t  # one task
+python3 scripts/autospec-run.py --max-tasks 3      # short trial
+python3 scripts/autospec-run.py                    # loop until nothing is runnable
+```
+
+Run it from a terminal (opencode-docker uses `docker run -it`). Logs land in `.autospec/runs/<task>/`. opencode picks up `AGENTS.md` from the project root automatically. Blocked tasks: `planning/05-unblock.md`.
 
 ## What each rule produces
 
