@@ -39,6 +39,6 @@ plan/TRACEABILITY.md      requirement → feature → task mapping (generated, n
 
 1. Audit the plan with `planning/04-audit.md`.
 2. Commit everything — that commit is the executor's baseline.
-3. Start the loop: `AUTOSPEC_RUNNER=<path to opencode-docker/run.sh> python3 scripts/autospec-run.py`
+3. Start the loop: `AUTOSPEC_RUNNER=<path to opencodocker/run.sh> python3 scripts/autospec-run.py`
    (one fresh opencode session per task; opencode reads `AGENTS.md` automatically).
 4. If tasks block, use `planning/05-unblock.md`.

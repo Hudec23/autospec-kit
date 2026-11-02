@@ -18,7 +18,7 @@ Usage:
   python3 scripts/autospec-run.py --dry-run           # print the order, run nothing
 Runner (required): --runner PATH or $AUTOSPEC_RUNNER. It is called as
   <runner> --project <repo root> --keep -- run "<task prompt>"
-which is the interface of opencode-docker's run.sh (https://github.com/Hudec23/opencode-docker):
+which is the interface of opencodocker's run.sh (https://github.com/Hudec23/opencodocker):
 --keep reuses its Docker-in-Docker daemon (and image cache) between tasks, `run` is opencode's
 non-interactive mode. Any wrapper with that interface works.
 Run it from a terminal: run.sh uses `docker run -it`, which needs a TTY on stdin.
@@ -302,7 +302,7 @@ def main() -> int:
             print(f"{e['status']:8} {tid}  deps={load_task(tid)['depends_on']}")
         return 0
     if not args.runner:
-        sys.exit("no runner: pass --runner PATH or set $AUTOSPEC_RUNNER (e.g. opencode-docker/run.sh)")
+        sys.exit("no runner: pass --runner PATH or set $AUTOSPEC_RUNNER (e.g. opencodocker/run.sh)")
     if not Path(runner).is_file():
         sys.exit(f"runner not found: {runner}")
 
