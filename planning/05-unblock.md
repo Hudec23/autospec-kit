@@ -16,4 +16,4 @@ Prompt:
 > Then list which `skipped` tasks will run again once these are fixed.
 
 Re-run the checker (step 3D); split tasks need new entries in `.autospec/state.json`.
-Commit the fixes, set blocked/skipped entries in `.autospec/state.json` back to `"status": "pending"`, and start the runner again.
+Commit the fixes, set blocked/skipped entries in `.autospec/state.json` back to `"status": "pending"`, and start the loop again (`python3 scripts/autospec-run.py`).

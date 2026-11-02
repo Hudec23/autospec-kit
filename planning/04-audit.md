@@ -22,6 +22,13 @@ dependency order and, for each, answer:
 7. Does the Do-not list cover the obvious traps (editing tests, changing contracts, adding deps,
    renaming exported symbols other tasks depend on)?
 
+Then, once for the whole plan:
+
+8. Bring up the dev/test compose and check `docker compose ps`: every infra container is
+   `healthy`, none `Exited`. Run every service's `baseline_tests`.
+9. `python3 scripts/autospec-run.py --dry-run` parses every task and lists them all; the first
+   tasks have no unmet `depends_on`.
+
 Fix every finding directly in the files, then re-run the checker (step 3D).
 
 Output a table: task id | findings | fixed (y/n). End with "READY FOR UNATTENDED RUN: yes/no" — yes only with
