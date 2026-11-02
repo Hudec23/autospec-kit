@@ -5,11 +5,16 @@ For each pending task in .autospec/state.json whose depends_on are all done:
   1. start a fresh agent session for that one task through the sandbox runner,
   2. check that only files under the task's `edit:` changed (other changes are reverted),
   3. run the task's `verify:` (must pass) and `expect_fail:` (must fail) commands itself,
+     inside the agent's dind container (same image cache and volumes the agent built with),
   4. pass -> commit the task's files + state.json, status done;
      fail -> retry with the failing output as feedback, up to max_attempts;
      then revert, status blocked. Tasks depending on a blocked task become skipped.
 
 Logs: .autospec/runs/<task id>/ (gitignored).
+
+Stopping: Ctrl-C reaches the agent (run.sh uses `docker run -it`); the agent exits 130 and the
+loop stops too, leaving that task pending with its changes reverted. To stop after the current
+task instead: `touch .autospec/STOP` (removed on the next start).
 
 Usage:
   python3 scripts/autospec-run.py                     # loop until nothing is runnable
@@ -43,6 +48,12 @@ RUNS = ROOT / ".autospec/runs"
 BLOCKED = ROOT / ".autospec/BLOCKED_REASON"
 STATE_REL = ".autospec/state.json"
 BLOCKED_REL = ".autospec/BLOCKED_REASON"
+STOP = ROOT / ".autospec/STOP"
+INTERRUPTED = (130, 143)  # agent killed by SIGINT / SIGTERM: the user wants to stop
+
+
+class Interrupted(Exception):
+    pass
 
 CHECK_TIMEOUT = 3600  # e2e verify builds the whole stack
 FEEDBACK_LINES = 150
@@ -221,13 +232,44 @@ def tail(log: Path, n: int = FEEDBACK_LINES) -> str:
     return "\n".join(log.read_text(errors="replace").splitlines()[-n:])
 
 
+def dind_name() -> str:
+    """The dind container run.sh starts for this project (instance = sanitized project basename)."""
+    instance = re.sub(r"[^a-z0-9-]+", "-", ROOT.name.lower()).strip("-")
+    return os.environ.get("AUTOSPEC_DIND", f"oc-dind-{instance}")
+
+
+def dind_for_checks() -> str | None:
+    """Running dind container that mounts this project, or None (checks then use host Docker)."""
+    name = dind_name()
+    r = subprocess.run(
+        ["docker", "inspect", "-f", '{{.State.Running}} {{index .Config.Labels "opencode.project"}}', name],
+        capture_output=True, text=True,
+    )
+    running, _, project = r.stdout.strip().partition(" ")
+    if r.returncode != 0 or running != "true" or project != str(ROOT):
+        print(f"[autospec-run] warning: {name} not running for {ROOT}; checks use host Docker (cold cache)")
+        return None
+    return name
+
+
 def check(task: dict, log: Path) -> str | None:
-    """Run verify (must pass) and expect_fail (must fail). Returns a failure message or None."""
+    """Run verify (must pass) and expect_fail (must fail). Returns a failure message or None.
+
+    Commands run inside the agent's dind container (project mounted at /workspace), so they reuse
+    the images and volumes the agent already built instead of rebuilding on the host engine.
+    """
+    dind = dind_for_checks()
+
+    def run(cmd: str) -> int:
+        if dind:
+            return run_logged(["docker", "exec", "-w", "/workspace", dind, "sh", "-c", cmd], log, CHECK_TIMEOUT)
+        return run_logged(cmd, log, CHECK_TIMEOUT, shell=True)
+
     for cmd in task["verify"]:
-        if run_logged(cmd, log, CHECK_TIMEOUT, shell=True) != 0:
+        if run(cmd) != 0:
             return f"verify failed: {cmd}"
     for cmd in task["expect_fail"]:
-        if run_logged(cmd, log, CHECK_TIMEOUT, shell=True) == 0:
+        if run(cmd) == 0:
             return f"expect_fail passed but must fail (tests not red against the stub): {cmd}"
     return None
 
@@ -255,6 +297,9 @@ def do_task(tid: str, runner: str, session_timeout: int) -> tuple[str, str]:
         print(f"\n=== {tid} — attempt {attempt}/{task['max_attempts']}: {task['title']}")
         agent = [runner, "--project", str(ROOT), "--keep", "--", "run", prompt_for(tid, attempt, feedback)]
         code = run_logged(agent, log, session_timeout)
+        if code in INTERRUPTED:
+            revert(changed_since(snap) - {STATE_REL}, snap)
+            raise Interrupted(f"{tid}: agent interrupted (exit {code}); task left pending, changes reverted")
 
         changed = changed_since(snap)
         if STATE_REL in changed:  # the runner owns state.json
@@ -306,13 +351,23 @@ def main() -> int:
     if not Path(runner).is_file():
         sys.exit(f"runner not found: {runner}")
 
-    done_count = 0
+    STOP.unlink(missing_ok=True)
+    done_count, stopped = 0, False
     while True:
+        if STOP.exists():
+            STOP.unlink()
+            print("[autospec-run] .autospec/STOP found, stopping")
+            stopped = True
+            break
         state = load_state()
         tid = next_task(state, args.only)
         if not tid:
             break
-        status, reason = do_task(tid, runner, args.session_timeout)
+        try:
+            status, reason = do_task(tid, runner, args.session_timeout)
+        except (Interrupted, KeyboardInterrupt) as e:
+            print(f"\n[autospec-run] stopped: {e or 'interrupted'}")
+            return 130
         state = load_state()
         state["tasks"][tid] = {"status": status, **({"reason": reason} if reason else {})}
         save_state(state)
@@ -329,7 +384,7 @@ def main() -> int:
         counts[e["status"]] = counts.get(e["status"], 0) + 1
     print(f"[autospec-run] finished: {counts}")
     pending = counts.get("pending", 0)
-    if pending and not args.only and not args.max_tasks:
+    if pending and not (stopped or args.only or args.max_tasks):
         print(f"[autospec-run] {pending} pending but none runnable (dependency cycle or missing ids)")
     return 1 if counts.get("blocked") else 0
 

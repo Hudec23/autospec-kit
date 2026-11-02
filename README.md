@@ -44,7 +44,7 @@ Run each `planning/` prompt in Claude Code, in order (step 3 builds and runs cod
 
 1. starts a fresh opencode session for that one task through your sandbox runner — called as `<runner> --project <repo> --keep -- run "<task prompt>"`, the interface of [opencode-docker](https://github.com/Hudec23/opencode-docker)'s `run.sh`,
 2. reverts any change outside the task's `edit:` list,
-3. runs the task's `verify:` / `expect_fail:` commands itself — the agent never grades its own work,
+3. runs the task's `verify:` / `expect_fail:` commands itself — the agent never grades its own work — inside the agent's dind container (`oc-dind-<project>`, override with `$AUTOSPEC_DIND`), so checks reuse the images the agent already built,
 4. commits on green and marks the task `done`; otherwise retries with the failing output as feedback (`.autospec/runs/<task>/feedback.txt`), then marks it `blocked` (dependents become `skipped`).
 
 ```sh
@@ -55,7 +55,7 @@ python3 scripts/autospec-run.py --max-tasks 3      # short trial
 python3 scripts/autospec-run.py                    # loop until nothing is runnable
 ```
 
-Run it from a terminal (opencode-docker uses `docker run -it`). Logs land in `.autospec/runs/<task>/`. opencode picks up `AGENTS.md` from the project root automatically. Blocked tasks: `planning/05-unblock.md`.
+Run it from a terminal (opencode-docker uses `docker run -it`). Ctrl-C stops the loop and leaves the current task pending; `touch .autospec/STOP` stops it after the current task. Logs land in `.autospec/runs/<task>/`. opencode picks up `AGENTS.md` from the project root automatically. Blocked tasks: `planning/05-unblock.md`.
 
 ## What each rule produces
 

@@ -22,8 +22,8 @@ For every service, commit a minimal skeleton so phase 2 starts from a green buil
 - generated code from contracts (step 2), committed,
 - the service's `setup`, `build`, `lint` commands and its `baseline_tests` actually pass,
 - `.gitignore` covers every build/test artifact of every language (`node_modules/`, `dist/`,
-  `__pycache__/`, `target/`, `bin/`, coverage, caches) plus `.autospec/runs/` and
-  `.autospec/BLOCKED_REASON` (`.autospec/state.json` is committed).
+  `__pycache__/`, `target/`, `bin/`, coverage, caches) plus `.autospec/runs/`,
+  `.autospec/BLOCKED_REASON` and `.autospec/STOP` (`.autospec/state.json` is committed).
 
 Once for the whole system:
 - a pinned `Dockerfile` per service and a root `docker-compose.yml` that starts the system,
