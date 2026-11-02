@@ -55,7 +55,7 @@ python3 scripts/autospec-run.py --max-tasks 3      # short trial
 python3 scripts/autospec-run.py                    # loop until nothing is runnable
 ```
 
-Run it from a terminal (opencodocker uses `docker run -it`). Logs land in `.autospec/runs/<task>/`. opencode picks up `AGENTS.md` from the project root automatically. Blocked tasks: `planning/05-unblock.md`.
+Run it from a terminal (opencodocker uses `docker run -it`). Ctrl-C stops the loop and leaves the current task pending; `touch .autospec/STOP` stops it after the current task. Logs land in `.autospec/runs/<task>/`. opencode picks up `AGENTS.md` from the project root automatically. Blocked tasks: `planning/05-unblock.md`.
 
 ## What each rule produces
 
