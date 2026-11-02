@@ -12,13 +12,17 @@ dependency order and, for each, answer:
    exception", only the status code, mocking the thing under test)? Make each case state the exact
    expected value. Could a correct implementation still fail them (over-specified internals,
    ordering, timestamps)? Loosen to the public behaviour. Are the needed fakes/fixtures in the repo?
-   Does the stub exist so the tests compile?
+   Does the stub exist so the tests compile? A stub that raises at once hides bugs in the test's
+   own setup, assertions and teardown (unhashable values, cleanup order, leaked connections): read
+   those parts as if the implementation were already correct.
 4. **Impl tasks:** could I pass the locked tests with a wrong implementation (hard-coded return,
    skipped validation)? Add test cases to the paired test task until not. Does the feature's last
    task lock and run its acceptance tests?
 5. Will I need a library, env var, migration, generated file or fixture that doesn't exist yet
    and isn't created by an earlier task? Add it to the skeleton or an earlier task.
-6. Does the task fit: ≤3 edit files, ≤15K tokens to read, one concern?
+6. Does the task fit: ≤3 edit files, ≤15K tokens to read, one concern? Count what the executor will
+   *want* to open, not only `read:`: a task covering many stages/endpoints/schemas makes it read
+   every contract file. Point it to example fixtures, inline the exact values, or split it.
 7. Does the Do-not list cover the obvious traps (editing tests, changing contracts, adding deps,
    renaming exported symbols other tasks depend on)?
 

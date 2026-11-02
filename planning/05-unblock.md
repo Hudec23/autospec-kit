@@ -15,5 +15,10 @@ Prompt:
 >
 > Then list which `skipped` tasks will run again once these are fixed.
 
+Splitting keeps every test task paired with an impl task of the same number: split both, and point
+the old dependents at the last new impl task. Never renumber existing tasks (state and commits use
+the ids); new tasks take the next free number. When regenerating task files, leave `done` tasks'
+files as they were and keep existing statuses in `.autospec/state.json`.
+
 Re-run the checker (step 3D); split tasks need new entries in `.autospec/state.json`.
 Commit the fixes, set blocked/skipped entries in `.autospec/state.json` back to `"status": "pending"`, and start the loop again (`python3 scripts/autospec-run.py`).
