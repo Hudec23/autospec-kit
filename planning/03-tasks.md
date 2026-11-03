@@ -1,7 +1,7 @@
 # Planning step 3 — Skeleton, stubs, acceptance tests, task pairs
 
 Read `plan/SYSTEM.md`, `plan/services/*`, `contracts/`. Produce the complete, ordered work
-breakdown for an executor that is **much weaker than you**: Qwen3.8-27B, 64K context, fresh
+breakdown for an executor that is **much weaker than you** (`plan/executor.yaml`): fresh
 session per task, no memory of previous tasks, cannot ask questions, cannot add dependencies.
 
 Division of labour for tests (keeps your planning cost low):
@@ -15,6 +15,9 @@ Division of labour for tests (keeps your planning cost low):
 For every service, commit a minimal skeleton so phase 2 starts from a green build:
 - manifest with ALL dependencies from SYSTEM.md installed and locked,
 - entrypoint that starts, config loading, health endpoint, logging, error shape,
+- every row of SYSTEM.md §5a (Security baseline), so the safe way is the only way the executor
+  sees: config module, redacting logger, error handler that hides internals, parameterized db
+  helpers, default-deny auth,
 - one example module and **one example test file** in the house style (the executor copies both),
 - test fakes/fixtures the unit tests will need (fake repo, fake bus, fixed clock, seeded ids),
 - **interface stubs** for every module a task will implement: real signatures and types, body
@@ -71,15 +74,17 @@ are red by design. The full suite is expected green only when every task is done
 
 Writing **Test cases** is the part that matters: one line per case, concrete values, exact
 expected status/error code/return value. Include happy path, every error the contract defines,
-and edges (empty, max length, duplicate, zero, negative, unicode). This is cheap for you to write
+and edges (empty, max length, duplicate, zero, negative, unicode). For anything reachable from
+outside (handler, consumer, CLI) also: unauthenticated → 401, someone else's resource → 403/404,
+malformed input → 400, and an internal failure whose response contains no internal detail. This is cheap for you to write
 and is what stops the executor from writing weak tests.
 
 Trivial glue (wiring a route, config, a DTO) may be an impl task with no test task, as long as it
 is locked to an acceptance or existing test that exercises it.
 
 Hard limits:
-- `edit:` at most 3 files. Every file the task creates or changes is listed. Nothing else.
-- Required reading (task body + `read:` + `locked:` files) ≤ 15,000 tokens. Paste the exact
+- `edit:` at most `max_edit_files` (`plan/executor.yaml`) files. Every file the task creates or changes is listed. Nothing else.
+- Required reading (AGENTS.md + task file + `read:` + `locked:` files) ≤ `max_read_tokens`. Paste the exact
   snippet (signature, type, schema fragment) into Context instead of listing a large file.
 - No two tasks that could run in either order edit the same file — add `depends_on`.
 - One concern per task. If you write "and" in the title, split it.
@@ -98,9 +103,10 @@ docker run --rm -v "$PWD":/w -w /w python:3.12.7-slim sh -c \
 
 It writes `plan/TRACEABILITY.md` (never edit that by hand) and fails on: a requirement no feature
 covers, a feature without tasks or acceptance tests, a feature whose last task doesn't lock and
-run its acceptance tests, test/impl pairs that don't match, more than 3 edit files, reading over
-~15K tokens, a file read before any task writes it, unordered tasks editing the same file,
-dependency cycles, and a state file out of sync. Fix and re-run until `PLAN CHECK: 0 errors`.
+run its acceptance tests, test/impl pairs that don't match, too many edit files or too much reading for
+`plan/executor.yaml`, a file read before any task writes it, unordered tasks editing the same file,
+dependency cycles, a state file out of sync, a service `regression` that can't run, and any
+plan file `autospec-run.py` would read differently than YAML does (keep values on one line). Fix and re-run until `PLAN CHECK: 0 errors`.
 
 It cannot judge content, so also check:
 - [ ] Every test task has ≥ 3 concrete test cases unless the unit is genuinely trivial.

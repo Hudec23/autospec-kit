@@ -1,21 +1,25 @@
 # Planning step 1 — System spec (interactive)
 
 You are the architect for a multi-service system that will be implemented **entirely by a weaker
-local model (Qwen3.8-27B, 64K context) with no human available**. Anything you leave undecided,
+local model with no human available**. Anything you leave undecided,
 it will decide badly. Your job in this step is to remove every decision from its path.
 
 ## What to do
 
 1. Read whatever the user provides (idea, notes, existing repo). If there is an existing repo,
    inspect it first: languages, frameworks, build tools, test runners, conventions.
-2. Interview the user. Ask in batches of at most 5 questions, multiple-choice where possible,
+2. Ask which model executes phase 2 and its context window; write `plan/executor.yaml` from
+   `templates/executor.yaml`. Every later step sizes tasks from it.
+3. Interview the user. Ask in batches of at most 5 questions, multiple-choice where possible,
    always with your recommended default. Keep going until every item in the checklist below is
    decided. If the user says "you decide", decide and record it as a decision.
-3. Write `plan/SYSTEM.md` using `templates/SYSTEM.md`.
-4. Write one `plan/services/<name>.yaml` per service using `templates/service.yaml`.
+4. Write `plan/SYSTEM.md` using `templates/SYSTEM.md`.
+5. Write one `plan/services/<name>.yaml` per service using `templates/service.yaml`.
    Every command must run inside a container (`docker compose run --rm ...`), so the runner
-   only needs Docker. Pin every image tag and dependency version.
-5. Write `docker-compose.dev.yml` at repo root: one `<name>-dev` toolchain container per service
+   only needs Docker. Pin every image tag and dependency version. `lint` includes a security
+   linter and a secret scanner (e.g. semgrep or bandit / gosec / eslint-plugin-security, plus
+   gitleaks), pinned in the dev container: regression runs `lint` after every task.
+6. Write `docker-compose.dev.yml` at repo root: one `<name>-dev` toolchain container per service
    (workspace mounted at `/workspace`), plus databases/brokers the tests need.
 
 ## Decision checklist (all must be answered in SYSTEM.md)
@@ -26,7 +30,10 @@ it will decide badly. Your job in this step is to remove every decision from its
   what it owns (data), what it must NOT do.
 - Communication: sync (REST/gRPC) vs async (queue/topic) for every service pair that talks.
 - Data: which DB per service, migration tool, no shared tables between services.
-- Auth between services and for users. Secrets come from env vars only; list every var.
+- Auth between services and for users: who may call what (default deny). Secrets come from env
+  vars only; list every var and mark secrets.
+- Security baseline (SYSTEM.md §5a): the one module that reads env, log redaction list, input
+  validation library, what error responses may reveal, CORS, security linter + secret scanner.
 - Error model: one shared error shape, status code / error code mapping.
 - Logging format, config loading, ID format (UUIDv7?), time format (UTC ISO-8601), money/decimals.
 - Repo layout: exact directory tree to two levels.

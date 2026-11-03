@@ -32,6 +32,24 @@ There are two kinds of task:
 5. Do not run `git` commands. The runner commits for you.
 6. Do not start long-running servers in the foreground. Use the given verify commands.
 
+## Code rules
+
+- **Reuse, don't copy.** If a helper in the repo already does it (config, errors, logging, db,
+  validation, clock, ids), call it. Never paste the same logic twice.
+- **Smallest code that passes.** No options, parameters or abstractions the task doesn't ask for.
+  No dead code, commented-out code, TODOs or debug prints left behind.
+- **Secrets and config:** read env vars only through the config module. Never hard-code a secret,
+  token, password or credentialed URL. Never log, print or return them.
+- **Errors:** use the shared error helper. Responses carry `code` + `message` only — never a stack
+  trace, SQL, file path or internal message. No empty `catch`, no catch-all that reports success.
+- **Untrusted input:** validate at the boundary with the schema the task names. Never build SQL,
+  shell commands, HTML or file paths by string concatenation: use parameters, argument arrays,
+  the escaping helper.
+- **Never loosen security** to make a test pass: no skipped auth or permission checks, no disabled
+  TLS verification, no `eval`, no wildcard CORS. If a test seems to need it, write
+  `.autospec/BLOCKED_REASON` and stop.
+- **Determinism:** time, ids and randomness come from the injected clock / id generator.
+
 ## Method — implementation task
 
 1. Read the task fully. Open the files under `read:`, then the tests under `locked:` — the tests
@@ -40,7 +58,8 @@ There are two kinds of task:
 3. Implement the smallest change that makes the tests pass.
 4. Run the `verify:` commands yourself. Read the failure, fix, repeat.
 5. When all `verify:` commands pass, stop. Write a one-line summary. Do not refactor other code.
-   Red tests outside `locked:` belong to unfinished tasks — ignore them.
+   Red tests outside `locked:` belong to unfinished tasks — ignore them. The runner also runs the
+   service regression (build, lint, tests that were green before); breaking any of them fails the task.
 
 ## Method — test-writing task
 

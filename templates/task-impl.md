@@ -5,10 +5,10 @@ feature: F-orders-create          # must exist in plan/features.yaml
 title: Implement POST /orders handler
 service: api                      # must match plan/services/<service>.yaml, or "integration"
 depends_on: [T-api-007t, T-api-004, T-api-006]   # T-api-007t = the test task that wrote the unit tests
-edit:                             # the ONLY files the executor may create or change (max 3, no tests)
+edit:                             # the ONLY files the executor may create or change (max_edit_files, no tests)
   - services/api/src/orders/create.ts     # stub written by Claude in planning; executor fills it in
   - services/api/src/routes.ts
-read:                             # files to open before coding (counted in the 15K budget)
+read:                             # files to open before coding (counted in max_read_tokens)
   - services/api/src/orders/get.ts          # example module to imitate
   - services/api/src/db/orders-repo.ts
 locked:                           # tests that define "done"

@@ -1,6 +1,6 @@
 # Planning step 4 — Audit as the executor
 
-Pretend you are the executor: a 27B model, 64K context, that sees ONE task file plus the files it
+Pretend you are the executor in `plan/executor.yaml`, that sees ONE task file plus the files it
 lists, nothing else, and cannot ask anything. Go through every task in `plan/tasks/` in
 dependency order and, for each, answer:
 
@@ -18,15 +18,18 @@ dependency order and, for each, answer:
    task lock and run its acceptance tests?
 5. Will I need a library, env var, migration, generated file or fixture that doesn't exist yet
    and isn't created by an earlier task? Add it to the skeleton or an earlier task.
-6. Does the task fit: ≤3 edit files, ≤15K tokens to read, one concern?
+6. Does the task fit `plan/executor.yaml` (edit files, read budget), one concern?
 7. Does the Do-not list cover the obvious traps (editing tests, changing contracts, adding deps,
    renaming exported symbols other tasks depend on)?
+8. Security: could I pass the tests while leaking a secret, skipping an auth check, string-building
+   a query or returning internal errors? Is the helper that prevents it in the skeleton and named
+   in Context? Do the test cases cover 401 / 403 / 400 / no internal detail?
 
 Then, once for the whole plan:
 
-8. Bring up the dev/test compose and check `docker compose ps`: every infra container is
+9. Bring up the dev/test compose and check `docker compose ps`: every infra container is
    `healthy`, none `Exited`. Run every service's `baseline_tests`.
-9. `python3 scripts/autospec-run.py --dry-run` parses every task and lists them all; the first
+10. `python3 scripts/autospec-run.py --dry-run` parses every task and lists them all; the first
    tasks have no unmet `depends_on`.
 
 Fix every finding directly in the files, then re-run the checker (step 3D).

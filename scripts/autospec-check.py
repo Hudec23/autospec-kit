@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """autospec plan checker and traceability generator.
 
-Reads plan/SYSTEM.md (requirements table), plan/features.yaml, plan/tasks/*.md,
-plan/services/*.yaml and .autospec/state.json. Writes plan/TRACEABILITY.md and
+Reads plan/SYSTEM.md (requirements table), plan/executor.yaml, plan/features.yaml,
+plan/tasks/*.md, plan/services/*.yaml and .autospec/state.json. Writes plan/TRACEABILITY.md and
 exits 1 if the plan breaks any rule. Re-run it after every plan change.
 
 Run from the repo root (needs only Docker):
@@ -21,13 +21,14 @@ try:
 except ImportError:
     sys.exit("autospec-check: needs PyYAML (pip install pyyaml==6.0.2)")
 
-MAX_EDIT = 3
-MAX_READ_TOKENS = 15_000
+import autospec_yaml  # the stdlib reader autospec-run.py uses; must agree with PyYAML
+
 CHARS_PER_TOKEN = 4  # rough estimate, good enough for a budget check
 REQ_ID = re.compile(r"^R-\d{3}$")
 TASK_ID = re.compile(r"^T-([a-z0-9-]+)-(\d{3})(t?)$")
 STATUSES = {"pending", "done", "blocked", "skipped"}
 LIST_KEYS = ("depends_on", "edit", "read", "locked", "verify", "expect_fail")
+REGRESSION_STEPS = {"build", "lint", "baseline_tests", "done_tests"}
 
 errors = []
 
@@ -74,18 +75,58 @@ def load_requirements(root):
     return reqs
 
 
-def load_yaml(path):
+def same_as_runner(where, text, parsed, read):
+    """Error unless autospec-run.py's reader (`read`) gets exactly what PyYAML got."""
+    hint = "keep values on one line; lists as [a, b] or '- item' lines; quote odd strings"
     try:
-        return yaml.safe_load(path.read_text()) or {}
+        mine = read(text)
+    except ValueError as e:
+        err(where, f"autospec-run.py cannot read this: {e} ({hint})")
+        return
+    for key in sorted(set(mine) | set(parsed)):
+        if mine.get(key) != parsed.get(key):
+            err(where, f"'{key}' reads as {mine.get(key)!r} in autospec-run.py but "
+                f"{parsed.get(key)!r} in YAML ({hint})")
+
+
+def load_yaml(path, runner_reads=False):
+    try:
+        text = path.read_text()
+        data = yaml.safe_load(text) or {}
     except (OSError, yaml.YAMLError) as e:
         err(str(path), f"cannot parse: {e}")
         return {}
+    if runner_reads:
+        same_as_runner(str(path), text, data, autospec_yaml.load)
+    return data
+
+
+def load_executor(root):
+    """Task size limits from plan/executor.yaml."""
+    path = root / "plan/executor.yaml"
+    if not path.exists():
+        err("plan/executor.yaml", "missing (copy templates/executor.yaml)")
+        return {"max_read_tokens": 16000, "max_edit_files": 3}
+    ex = load_yaml(path)
+    ctx = ex.get("context_tokens")
+    if not isinstance(ctx, int) or ctx <= 0:
+        err("plan/executor.yaml", "context_tokens must be a positive integer")
+        ctx = 65536
+    ex.setdefault("max_read_tokens", ctx // 4)
+    ex.setdefault("max_edit_files", 3)
+    for key in ("max_read_tokens", "max_edit_files"):
+        if not isinstance(ex[key], int) or ex[key] <= 0:
+            err("plan/executor.yaml", f"{key} must be a positive integer")
+    if isinstance(ex["max_read_tokens"], int) and ex["max_read_tokens"] > ctx // 2:
+        err("plan/executor.yaml", f"max_read_tokens {ex['max_read_tokens']} leaves less than half of "
+            f"context_tokens {ctx} for reasoning and tool output")
+    return ex
 
 
 def load_services(root):
     services = {}
     for p in sorted((root / "plan/services").glob("*.yaml")):
-        services[p.stem] = load_yaml(p)
+        services[p.stem] = load_yaml(p, runner_reads=True)
     if not services:
         err("plan/services", "no <name>.yaml files")
     return services
@@ -124,6 +165,7 @@ def load_tasks(root):
         except yaml.YAMLError as e:
             err(where, f"cannot parse frontmatter: {e}")
             continue
+        same_as_runner(where, text, dict(fm), autospec_yaml.frontmatter)
         for key in ("id", "kind", "feature", "title", "service"):
             if not fm.get(key):
                 err(where, f"missing '{key}'")
@@ -161,6 +203,24 @@ def load_state(root, tasks):
         if tid not in entries:
             err(".autospec/state.json", f"{tid} missing")
     return status
+
+
+def check_services(root, services):
+    for name, svc in services.items():
+        where = f"plan/services/{name}.yaml"
+        cmds = svc.get("commands") or {}
+        steps = svc.get("regression") or sorted(REGRESSION_STEPS)
+        for step in steps:
+            if step not in REGRESSION_STEPS:
+                err(where, f"unknown regression step {step!r} (use {sorted(REGRESSION_STEPS)})")
+            elif step in ("build", "lint") and not cmds.get(step):
+                err(where, f"regression lists {step} but commands.{step} is missing")
+        if {"baseline_tests", "done_tests"} & set(steps):
+            if "{files}" not in str(cmds.get("test_files", "")):
+                err(where, "regression runs tests: commands.test_files must contain {files}")
+        for path in svc.get("baseline_tests") or []:
+            if not (root / path).exists():
+                err(where, f"baseline test {path} does not exist")
 
 
 # ---------------------------------------------------------------- graph
@@ -232,9 +292,12 @@ def check_features(root, features):
                 err("plan/features.yaml", f"{fid}: contract {ref} does not exist")
 
 
-def check_tasks(root, tasks, features, services, anc):
+def check_tasks(root, tasks, features, services, anc, executor):
     test_files = {p for f in features.values() for p in f["acceptance"]}
     test_files |= {p for t in tasks.values() if t.get("kind") == "test" for p in t["edit"]}
+    max_edit, max_read = executor["max_edit_files"], executor["max_read_tokens"]
+    agents = root / "AGENTS.md"  # the harness loads it into every session
+    base_chars = agents.stat().st_size if agents.exists() else 0
 
     for tid, t in tasks.items():
         w = t["_where"]
@@ -255,8 +318,8 @@ def check_tasks(root, tasks, features, services, anc):
                 err(w, f"depends_on unknown task {d}")
         if not t["edit"]:
             err(w, "edit: is empty")
-        if len(t["edit"]) > MAX_EDIT:
-            err(w, f"edits {len(t['edit'])} files (max {MAX_EDIT})")
+        if len(t["edit"]) > max_edit:
+            err(w, f"edits {len(t['edit'])} files (max {max_edit}, plan/executor.yaml)")
         if not t["verify"]:
             err(w, "verify: is empty")
         for path in t["edit"]:
@@ -283,15 +346,16 @@ def check_tasks(root, tasks, features, services, anc):
         # Files to read must exist now or be written by a task that runs earlier.
         before = anc[tid] if anc else set()
         written_before = {p for d in before for p in tasks[d]["edit"]}
-        chars = t["_chars"]
+        chars = base_chars + t["_chars"]
         for path in t["read"] + t["locked"]:
             f = root / path
             if f.exists():
                 chars += f.stat().st_size
             elif anc is not None and path not in written_before:
                 err(w, f"reads {path}, which does not exist and no earlier task writes it")
-        if chars // CHARS_PER_TOKEN > MAX_READ_TOKENS:
-            err(w, f"required reading ~{chars // CHARS_PER_TOKEN} tokens (max {MAX_READ_TOKENS})")
+        if chars // CHARS_PER_TOKEN > max_read:
+            err(w, f"required reading ~{chars // CHARS_PER_TOKEN} tokens incl. AGENTS.md "
+                f"(max {max_read}, plan/executor.yaml)")
 
     if anc is None:
         return
@@ -399,15 +463,17 @@ def main():
     root = Path(args.root)
 
     reqs = load_requirements(root)
+    executor = load_executor(root)
     services = load_services(root)
     features = load_features(root)
     tasks = load_tasks(root)
     status = load_state(root, tasks)
     anc = ancestors_of(tasks)
 
+    check_services(root, services)
     check_requirements(reqs, features)
     check_features(root, features)
-    check_tasks(root, tasks, features, services, anc)
+    check_tasks(root, tasks, features, services, anc, executor)
     last = last_tasks(features, tasks, anc)
     check_last_tasks(features, tasks, services, last)
 

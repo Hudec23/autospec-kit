@@ -37,9 +37,22 @@ Per service: database, migration tool, location of schema file.
 | Config | env vars only; full list in §6 |
 | Auth | ... |
 
+## 5a. Security baseline
+Each row is implemented once in the walking skeleton; the executor only calls it.
+| Topic | Decision | Implemented in (skeleton) |
+|---|---|---|
+| Config / secrets | env read only in the config module; secrets typed, never logged | services/api/src/config.ts |
+| Log redaction | never log: password, token, authorization, cookie, secret vars | services/api/src/log.ts |
+| Errors | responses carry code + message only; internals logged, not returned | services/api/src/errors.ts |
+| Input validation | zod schema at every boundary | per handler |
+| DB access | parameterized queries only, via repo helpers | services/api/src/db/ |
+| AuthN / AuthZ | default deny; route table lists who may call each route | services/api/src/auth.ts |
+| CORS | explicit origin list from config, never `*` | services/api/src/app.ts |
+| Static checks | security linter + secret scanner in every service's `lint` | plan/services/*.yaml |
+
 ## 6. Environment variables
-| Var | Service | Example | Required |
-|---|---|---|---|
+| Var | Service | Example | Required | Secret |
+|---|---|---|---|---|
 
 ## 7. Repo layout
 ```
