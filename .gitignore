@@ -1,2 +1,5 @@
 .DS_Store
 __pycache__/
+.autospec/runs/
+.autospec/BLOCKED_REASON
+.autospec/STOP

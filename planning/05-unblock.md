@@ -1,6 +1,6 @@
 # After a run — unblock
 
-Give Claude: `REPORT.md`, and for each blocked task `.autospec/runs/<task>/attempt-*.log`
+Give Claude: `.autospec/REPORT.md` (committed by the runner), and for each blocked task `.autospec/runs/<task>/attempt-*.log`
 (last attempt is usually enough) plus the task file.
 
 Prompt:

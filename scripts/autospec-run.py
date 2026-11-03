@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """autospec task loop (phase 2). Runs on the host; needs python3 (stdlib only), git and Docker.
 
-For each pending task in .autospec/state.json whose depends_on are all done:
+Starts from a clean working tree. For each pending task in .autospec/state.json whose depends_on
+are all done:
   1. start a fresh agent session for that one task through the sandbox runner,
   2. check that only files under the task's `edit:` changed (other changes are reverted),
-  3. run the task's `verify:` (must pass) and `expect_fail:` (must fail) commands itself,
-     inside the agent's dind container (same image cache and volumes the agent built with),
+  3. run the gate itself, inside the agent's dind container (same image cache and volumes the
+     agent built with): `verify:` must pass, `expect_fail:` must fail, then the service's
+     `regression` (build, lint, baseline_tests, tests locked by done impl tasks) must pass,
   4. pass -> commit the task's files + state.json, status done;
-     fail -> retry with the failing output as feedback, up to max_attempts;
+     fail -> retry with the failing check's output as feedback, up to max_attempts;
      then revert, status blocked. Tasks depending on a blocked task become skipped.
+At the end it writes and commits .autospec/REPORT.md (input for planning/05-unblock.md).
 
 Logs: .autospec/runs/<task id>/ (gitignored).
 
-Stopping: Ctrl-C reaches the agent (run.sh uses `docker run -it`); the agent exits 130 and the
-loop stops too, leaving that task pending with its changes reverted. To stop after the current
-task instead: `touch .autospec/STOP` (removed on the next start).
+Stopping: Ctrl-C stops the agent and the loop, leaving that task pending with its changes
+reverted. To stop after the current task instead: `touch .autospec/STOP` (removed on next start).
 
 Usage:
   python3 scripts/autospec-run.py                     # loop until nothing is runnable
@@ -32,70 +34,64 @@ Run it from a terminal: run.sh uses `docker run -it`, which needs a TTY on stdin
 from __future__ import annotations
 
 import argparse
-import hashlib
+import collections
+import datetime
+import functools
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
-import time
+import threading
 from pathlib import Path
 
+import autospec_yaml
+
 ROOT = Path(__file__).resolve().parents[1]
-STATE = ROOT / ".autospec/state.json"
+STATE_REL = ".autospec/state.json"
+REPORT_REL = ".autospec/REPORT.md"
+STATE = ROOT / STATE_REL
+REPORT = ROOT / REPORT_REL
 TASKS = ROOT / "plan/tasks"
+SERVICES = ROOT / "plan/services"
 RUNS = ROOT / ".autospec/runs"
 BLOCKED = ROOT / ".autospec/BLOCKED_REASON"
-STATE_REL = ".autospec/state.json"
-BLOCKED_REL = ".autospec/BLOCKED_REASON"
 STOP = ROOT / ".autospec/STOP"
+MUST_IGNORE = (".autospec/runs/x", ".autospec/BLOCKED_REASON", ".autospec/STOP")
 INTERRUPTED = (130, 143)  # agent killed by SIGINT / SIGTERM: the user wants to stop
+DEFAULT_REGRESSION = ["build", "lint", "baseline_tests", "done_tests"]
+CHECK_TIMEOUT = 3600  # e2e verify builds the whole stack
+FEEDBACK_LINES = 150
 
 
 class Interrupted(Exception):
     pass
 
-CHECK_TIMEOUT = 3600  # e2e verify builds the whole stack
-FEEDBACK_LINES = 150
+
+# ── plan files ────────────────────────────────────────────────────────────────
 
 
-# ── task files ────────────────────────────────────────────────────────────────
-
-
-def _scalar(v: str):
-    v = v.strip()
-    if v == "[]":
-        return []
-    if v.startswith("'") and v.endswith("'"):
-        return v[1:-1].replace("''", "'")
-    if v.startswith('"') and v.endswith('"'):
-        return json.loads(v)
-    if re.fullmatch(r"-?\d+", v):
-        return int(v)
-    return v
-
-
+@functools.cache
 def load_task(task_id: str) -> dict:
-    """Parse the YAML frontmatter that scripts/plan/core.py writes (flat keys, block lists)."""
-    lines = (TASKS / f"{task_id}.md").read_text().splitlines()
-    if not lines or lines[0] != "---":
-        sys.exit(f"{task_id}: no frontmatter")
-    fm: dict = {}
-    key = None
-    for line in lines[1:]:
-        if line == "---":
-            break
-        if line.startswith("- ") and key:
-            fm[key].append(_scalar(line[2:]))
-        elif m := re.match(r"^([a-z_]+):(.*)$", line):
-            key, rest = m.group(1), m.group(2)
-            fm[key] = _scalar(rest) if rest.strip() else []
-        else:
-            sys.exit(f"{task_id}: cannot parse frontmatter line: {line!r}")
-    for k in ("edit", "verify", "expect_fail", "depends_on"):
-        fm.setdefault(k, [])
+    path = TASKS / f"{task_id}.md"
+    try:
+        fm = autospec_yaml.frontmatter(path.read_text())
+    except (OSError, ValueError) as e:
+        sys.exit(f"{path.relative_to(ROOT)}: {e} (run scripts/autospec-check.py)")
+    for k in ("edit", "verify", "expect_fail", "depends_on", "locked"):
+        fm[k] = fm.get(k) or []
     fm.setdefault("max_attempts", 3)
     return fm
+
+
+@functools.cache
+def load_service(name: str) -> dict:
+    path = SERVICES / f"{name}.yaml"
+    try:
+        return autospec_yaml.load(path.read_text())
+    except (OSError, ValueError) as e:
+        sys.exit(f"{path.relative_to(ROOT)}: {e} (run scripts/autospec-check.py)")
 
 
 # ── state ─────────────────────────────────────────────────────────────────────
@@ -135,13 +131,15 @@ def next_task(state: dict, only: str | None) -> str | None:
 
 
 # ── git / working tree ────────────────────────────────────────────────────────
+# The loop starts from a clean tree and commits after every task, so during a task every path
+# `git status` reports was changed by that task.
 
 
 def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], cwd=ROOT, check=check, capture_output=True, text=True)
 
 
-def dirty_paths() -> set[str]:
+def changed_paths() -> set[str]:
     out = git("status", "--porcelain=v1", "-z", "-uall").stdout.split("\0")
     paths, i = set(), 0
     while i < len(out):
@@ -156,62 +154,79 @@ def dirty_paths() -> set[str]:
     return paths
 
 
-def file_hash(rel: str) -> str | None:
-    p = ROOT / rel
-    return hashlib.sha1(p.read_bytes()).hexdigest() if p.is_file() else None
+def require_clean() -> None:
+    missing = [p for p in MUST_IGNORE if git("check-ignore", "-q", p, check=False).returncode]
+    if missing:
+        sys.exit("[autospec-run] add to .gitignore: .autospec/runs/, .autospec/BLOCKED_REASON, .autospec/STOP")
+    dirty = changed_paths()
+    if dirty:
+        sys.exit(
+            f"[autospec-run] working tree not clean: {', '.join(sorted(dirty)[:10])}\n"
+            "Commit or stash them (git stash -u), or gitignore build artifacts, then run again."
+        )
 
 
-def snapshot() -> dict[str, str | None]:
-    return {p: file_hash(p) for p in dirty_paths()}
-
-
-def changed_since(snap: dict[str, str | None]) -> set[str]:
-    """Paths whose content differs from the snapshot (a clean path's baseline is HEAD)."""
-    out = set()
-    for p in dirty_paths() | set(snap):
-        if p not in snap or file_hash(p) != snap[p]:
-            out.add(p)
-    return out
-
-
-def in_head(rel: str) -> bool:
-    return git("cat-file", "-e", f"HEAD:{rel}", check=False).returncode == 0
-
-
-def revert(paths: set[str], snap: dict[str, str | None]) -> list[str]:
-    """Restore paths to their pre-task state. Returns paths that could not be restored."""
-    lost = []
+def discard(paths: set[str]) -> None:
+    """Restore paths to HEAD (delete them if HEAD doesn't have them)."""
     for p in sorted(paths):
-        if p in snap:  # was already dirty before the task: we have no copy of it
-            lost.append(p)
-        elif in_head(p):
+        if git("cat-file", "-e", f"HEAD:{p}", check=False).returncode == 0:
             git("checkout", "HEAD", "--", p)
         else:
             (ROOT / p).unlink(missing_ok=True)
-    return lost
+
+
+def discard_all() -> None:
+    git("reset", "-q", "--hard", "HEAD")
+    git("clean", "-q", "-fd")  # untracked, not ignored: only the task created those
 
 
 # ── running ───────────────────────────────────────────────────────────────────
 
 
-def run_logged(cmd: list[str] | str, log: Path, timeout: int | None, shell: bool = False) -> int:
-    """Run cmd, stream output to the terminal and to log. Returns the exit code (124 on timeout)."""
+def run_logged(cmd: list[str] | str, log: Path, timeout: int | None, shell: bool = False) -> tuple[int, str]:
+    """Run cmd, stream output to the terminal and to log.
+
+    Returns (exit code, last FEEDBACK_LINES of output); the code is 124 on timeout.
+    """
+    tail: collections.deque[str] = collections.deque(maxlen=FEEDBACK_LINES)
     with log.open("a") as fh:
-        fh.write(f"\n$ {cmd if shell else ' '.join(cmd)}\n")
+        fh.write(f"\n$ {cmd if shell else shlex.join(cmd)}\n")
         fh.flush()
         proc = subprocess.Popen(
             cmd, cwd=ROOT, shell=shell, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
-        start = time.monotonic()
-        assert proc.stdout
-        for line in proc.stdout:
-            sys.stdout.write(line)
-            fh.write(line)
-            if timeout and time.monotonic() - start > timeout:
+
+        def pump() -> None:
+            assert proc.stdout
+            for line in proc.stdout:
+                sys.stdout.write(line)
+                fh.write(line)
+                tail.append(line)
+
+        reader = threading.Thread(target=pump, daemon=True)
+        reader.start()
+        try:
+            code = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            code = 124
+        except KeyboardInterrupt:  # Ctrl-C reached the child too; give it a moment to exit
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
                 proc.kill()
-                fh.write(f"\n[autospec-run] timeout after {timeout}s\n")
-                return 124
-        return proc.wait()
+            raise
+        reader.join(5)
+        if code == 124:
+            fh.write(f"\n[autospec-run] timeout after {timeout}s\n")
+            tail.append(f"[autospec-run] timeout after {timeout}s\n")
+    return code, "".join(tail)
+
+
+def agent_cmd(runner: str, prompt: str) -> list[str]:
+    """The one place that knows the runner's interface."""
+    return [runner, "--project", str(ROOT), "--keep", "--", "run", prompt]
 
 
 def prompt_for(tid: str, attempt: int, feedback: Path) -> str:
@@ -226,10 +241,6 @@ def prompt_for(tid: str, attempt: int, feedback: Path) -> str:
             f"Read {feedback.relative_to(ROOT)} first. Your files from that attempt are still in place."
         )
     return p
-
-
-def tail(log: Path, n: int = FEEDBACK_LINES) -> str:
-    return "\n".join(log.read_text(errors="replace").splitlines()[-n:])
 
 
 def dind_name() -> str:
@@ -252,83 +263,158 @@ def dind_for_checks() -> str | None:
     return name
 
 
-def check(task: dict, log: Path) -> str | None:
-    """Run verify (must pass) and expect_fail (must fail). Returns a failure message or None.
+# ── gate ──────────────────────────────────────────────────────────────────────
 
+
+def done_tests(service: str, state: dict) -> list[str]:
+    """Tests locked by done impl tasks of this service: proven green, must stay green."""
+    files = []
+    for tid, entry in state["tasks"].items():
+        t = load_task(tid)
+        if entry["status"] == "done" and t["kind"] == "impl" and t["service"] == service:
+            files += t["locked"]
+    return files
+
+
+def regression(task: dict, state: dict) -> list[tuple[str, str]]:
+    """(name, command) pairs of the service's regression, per plan/services/<service>.yaml."""
+    name = task["service"]
+    svc = load_service(name)
+    cmds = svc.get("commands") or {}
+    out, files = [], []
+    for step in svc.get("regression") or DEFAULT_REGRESSION:
+        if step in ("build", "lint"):
+            if cmds.get(step):
+                out.append((step, cmds[step]))
+        elif step == "baseline_tests":
+            files += svc.get("baseline_tests") or []
+        elif step == "done_tests":
+            files += done_tests(name, state)
+        else:
+            sys.exit(f"plan/services/{name}.yaml: unknown regression step {step!r}")
+    files = list(dict.fromkeys(files))
+    if files:
+        if not cmds.get("test_files"):
+            sys.exit(f"plan/services/{name}.yaml: regression runs tests but commands.test_files is missing")
+        base = str(svc.get("path") or "").strip("/")
+        rel = [f[len(base) + 1:] if base not in ("", ".") and f.startswith(base + "/") else f for f in files]
+        out.append(("tests", cmds["test_files"].replace("{files}", " ".join(map(shlex.quote, rel)))))
+    return out
+
+
+def gate(task: dict, state: dict, log: Path) -> tuple[str, str]:
+    """Run verify (must pass), expect_fail (must fail), regression (must pass).
+
+    Returns (failure reason, output of the failing command), or ("", "") when everything holds.
     Commands run inside the agent's dind container (project mounted at /workspace), so they reuse
     the images and volumes the agent already built instead of rebuilding on the host engine.
     """
     dind = dind_for_checks()
 
-    def run(cmd: str) -> int:
+    def run(cmd: str) -> tuple[int, str]:
         if dind:
             return run_logged(["docker", "exec", "-w", "/workspace", dind, "sh", "-c", cmd], log, CHECK_TIMEOUT)
         return run_logged(cmd, log, CHECK_TIMEOUT, shell=True)
 
     for cmd in task["verify"]:
-        if run(cmd) != 0:
-            return f"verify failed: {cmd}"
+        code, out = run(cmd)
+        if code != 0:
+            return f"verify failed: {cmd}", out
     for cmd in task["expect_fail"]:
-        if run(cmd) == 0:
-            return f"expect_fail passed but must fail (tests not red against the stub): {cmd}"
-    return None
+        code, out = run(cmd)
+        if code == 0:
+            return f"expect_fail passed but must fail (tests not red against the stub): {cmd}", out
+    for name, cmd in regression(task, state):
+        code, out = run(cmd)
+        if code != 0:
+            return f"regression {name} failed — this task broke something that worked before: {cmd}", out
+    return "", ""
 
 
-def do_task(tid: str, runner: str, session_timeout: int) -> tuple[str, str]:
+# ── one task ──────────────────────────────────────────────────────────────────
+
+
+def do_task(tid: str, state: dict, runner: str, session_timeout: int) -> tuple[str, str]:
     """Run one task through all attempts. Returns (status, reason)."""
     task = load_task(tid)
-    allowed = set(task["edit"]) | {BLOCKED_REL}
+    allowed = set(task["edit"])
     run_dir = RUNS / tid
     run_dir.mkdir(parents=True, exist_ok=True)
     feedback = run_dir / "feedback.txt"
     BLOCKED.unlink(missing_ok=True)
-    snap = snapshot()
-    pre_dirty = sorted(set(task["edit"]) & set(snap))
-    if pre_dirty:  # changes are measured against the snapshot, so these would look untouched
-        sys.exit(
-            f"[autospec-run] {tid}: files under `edit:` already have uncommitted changes: "
-            f"{', '.join(pre_dirty)}\nCommit, stash or discard them (git status), then run again."
-        )
     reason = ""
 
-    for attempt in range(1, task["max_attempts"] + 1):
-        log = run_dir / f"attempt-{attempt}.log"
-        log.write_text(f"[autospec-run] {tid} attempt {attempt}\n")
-        print(f"\n=== {tid} — attempt {attempt}/{task['max_attempts']}: {task['title']}")
-        agent = [runner, "--project", str(ROOT), "--keep", "--", "run", prompt_for(tid, attempt, feedback)]
-        code = run_logged(agent, log, session_timeout)
-        if code in INTERRUPTED:
-            revert(changed_since(snap) - {STATE_REL}, snap)
-            raise Interrupted(f"{tid}: agent interrupted (exit {code}); task left pending, changes reverted")
+    try:
+        for attempt in range(1, task["max_attempts"] + 1):
+            log = run_dir / f"attempt-{attempt}.log"
+            log.write_text(f"[autospec-run] {tid} attempt {attempt}\n")
+            print(f"\n=== {tid} — attempt {attempt}/{task['max_attempts']}: {task['title']}")
+            code, _ = run_logged(agent_cmd(runner, prompt_for(tid, attempt, feedback)), log, session_timeout)
+            if code in INTERRUPTED:
+                raise Interrupted(f"agent exited {code}")
 
-        changed = changed_since(snap)
-        if STATE_REL in changed:  # the runner owns state.json
-            git("checkout", "HEAD", "--", STATE_REL)
-            changed.discard(STATE_REL)
-        outside = changed - allowed
-        if outside:
-            lost = revert(outside, snap)
-            reason = f"edited files outside `edit:` (reverted): {', '.join(sorted(outside))}"
-            if lost:
-                reason += f"; could not restore pre-dirty files: {', '.join(lost)}"
-        elif BLOCKED.exists():
-            reason = "agent blocked: " + BLOCKED.read_text().strip()
-            BLOCKED.unlink()
-            revert(changed - {BLOCKED_REL}, snap)
-            return "blocked", reason
-        elif not changed:
-            reason = f"agent exited ({code}) without changing any file"
-        else:
-            reason = check(task, log) or ""
-            if not reason:
-                git("add", "--", *sorted(changed))
-                return "done", ""
+            output = ""
+            changed = changed_paths()
+            if STATE_REL in changed:  # the runner owns state.json
+                discard({STATE_REL})
+                changed.discard(STATE_REL)
+            outside = changed - allowed
+            if outside:
+                discard(outside)
+                reason = f"edited files outside `edit:` (reverted): {', '.join(sorted(outside))}"
+            elif BLOCKED.exists():
+                reason = "agent blocked: " + BLOCKED.read_text().strip()
+                BLOCKED.unlink()
+                discard_all()
+                return "blocked", reason
+            elif not changed:
+                reason = f"agent exited ({code}) without changing any file"
+            else:
+                reason, output = gate(task, state, run_dir / f"attempt-{attempt}.checks.log")
+                if not reason:
+                    git("add", "--", *sorted(changed))
+                    return "done", ""
 
-        print(f"[autospec-run] {tid} attempt {attempt} failed: {reason}")
-        feedback.write_text(f"Runner check failed: {reason}\n\nLast output:\n{tail(log)}\n")
+            print(f"[autospec-run] {tid} attempt {attempt} failed: {reason}")
+            text = f"Runner check failed: {reason}\n"
+            if output:
+                text += f"\nOutput of that command (last {FEEDBACK_LINES} lines):\n{output}"
+            feedback.write_text(text)
+    except (Interrupted, KeyboardInterrupt) as e:
+        discard_all()
+        raise Interrupted(f"{tid}: {str(e) or 'interrupted'}; task left pending, changes reverted") from None
 
-    revert(changed_since(snap) - {STATE_REL}, snap)
+    discard_all()
     return "blocked", f"failed {task['max_attempts']} attempts; last: {reason}"
+
+
+# ── report ────────────────────────────────────────────────────────────────────
+
+
+def write_report(state: dict) -> None:
+    tasks = state["tasks"]
+    counts = collections.Counter(e["status"] for e in tasks.values())
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    out = [
+        "# autospec run report",
+        "",
+        f"Generated {now} at commit {git('rev-parse', '--short', 'HEAD').stdout.strip()}. "
+        + ", ".join(f"{s}: {counts.get(s, 0)}" for s in ("done", "blocked", "skipped", "pending")),
+        "",
+        "Input for planning/05-unblock.md. Logs: `.autospec/runs/<task>/` on the machine that ran the loop.",
+    ]
+    for status in ("blocked", "skipped", "pending"):
+        rows = [(tid, e) for tid, e in tasks.items() if e["status"] == status]
+        if not rows:
+            continue
+        out += ["", f"## {status.capitalize()}", "", "| Task | Title | Reason |", "|---|---|---|"]
+        for tid, e in rows:
+            why = (e.get("reason") or "–").replace("|", "\\|").replace("\n", " ")
+            out.append(f"| {tid} | {load_task(tid)['title']} | {why} |")
+    REPORT.write_text("\n".join(out) + "\n")
+
+
+# ── main ──────────────────────────────────────────────────────────────────────
 
 
 def main() -> int:
@@ -342,17 +428,17 @@ def main() -> int:
     runner = str(Path(args.runner).expanduser())
 
     if args.dry_run:
-        state = load_state()
-        for tid, e in state["tasks"].items():
+        for tid, e in load_state()["tasks"].items():
             print(f"{e['status']:8} {tid}  deps={load_task(tid)['depends_on']}")
         return 0
     if not args.runner:
         sys.exit("no runner: pass --runner PATH or set $AUTOSPEC_RUNNER (e.g. opencode-docker/run.sh)")
     if not Path(runner).is_file():
         sys.exit(f"runner not found: {runner}")
+    require_clean()
 
     STOP.unlink(missing_ok=True)
-    done_count, stopped = 0, False
+    done_count, stopped, code = 0, False, 0
     while True:
         if STOP.exists():
             STOP.unlink()
@@ -364,29 +450,37 @@ def main() -> int:
         if not tid:
             break
         try:
-            status, reason = do_task(tid, runner, args.session_timeout)
-        except (Interrupted, KeyboardInterrupt) as e:
-            print(f"\n[autospec-run] stopped: {e or 'interrupted'}")
-            return 130
-        state = load_state()
+            status, reason = do_task(tid, state, runner, args.session_timeout)
+        except Interrupted as e:
+            print(f"\n[autospec-run] stopped: {e}")
+            stopped, code = True, 130
+            break
         state["tasks"][tid] = {"status": status, **({"reason": reason} if reason else {})}
         save_state(state)
         git("add", "--", STATE_REL)
         title = load_task(tid)["title"]
         git("commit", "-q", "-m", f"{tid}: {title}" if status == "done" else f"{tid}: blocked\n\n{reason}")
         print(f"[autospec-run] {tid} -> {status} {reason}")
+        leftover = changed_paths()
+        if leftover:  # the gate's commands wrote files outside .gitignore
+            sys.exit(
+                f"[autospec-run] checks left files that are not gitignored: {', '.join(sorted(leftover)[:10])}\n"
+                "Gitignore them (build/test artifacts) or fix the command that writes them, then run again."
+            )
         done_count += 1
         if args.only or (args.max_tasks and done_count >= args.max_tasks):
             break
 
-    counts: dict[str, int] = {}
-    for e in load_state()["tasks"].values():
-        counts[e["status"]] = counts.get(e["status"], 0) + 1
-    print(f"[autospec-run] finished: {counts}")
+    state = load_state()
+    write_report(state)
+    git("add", "--", REPORT_REL, STATE_REL)  # state: the final skip cascade
+    git("commit", "-q", "-m", "autospec: run report")
+    counts = collections.Counter(e["status"] for e in state["tasks"].values())
+    print(f"[autospec-run] finished: {dict(counts)} — see {REPORT_REL}")
     pending = counts.get("pending", 0)
     if pending and not (stopped or args.only or args.max_tasks):
         print(f"[autospec-run] {pending} pending but none runnable (dependency cycle or missing ids)")
-    return 1 if counts.get("blocked") else 0
+    return code or (1 if counts.get("blocked") else 0)
 
 
 if __name__ == "__main__":
