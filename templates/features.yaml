@@ -1,7 +1,7 @@
 # plan/features.yaml — one entry per user-visible capability.
 # Acceptance tests are written by Claude during planning, exercise the feature end-to-end through
 # its public interface (HTTP, CLI, events), and are locked in the feature's last implementation task.
-# `requirements` are IDs from SYSTEM.md §1a. scripts/autospec-check.py builds plan/TRACEABILITY.md
+# `requirements` are IDs from SYSTEM.md §1a. .autospec/kit/scripts/autospec-check.py builds plan/TRACEABILITY.md
 # from these links plus each task's `feature:`.
 features:
   - id: F-orders-create

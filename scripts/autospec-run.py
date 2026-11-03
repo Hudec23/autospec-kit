@@ -19,16 +19,16 @@ Stopping: Ctrl-C stops the agent and the loop, leaving that task pending with it
 reverted. To stop after the current task instead: `touch .autospec/STOP` (removed on next start).
 
 Usage:
-  python3 scripts/autospec-run.py                     # loop until nothing is runnable
-  python3 scripts/autospec-run.py --only T-api-003t   # one task
-  python3 scripts/autospec-run.py --max-tasks 5
-  python3 scripts/autospec-run.py --dry-run           # print the order, run nothing
+  python3 .autospec/kit/scripts/autospec-run.py                     # loop until nothing is runnable
+  python3 .autospec/kit/scripts/autospec-run.py --only T-api-003t   # one task
+  python3 .autospec/kit/scripts/autospec-run.py --max-tasks 5
+  python3 .autospec/kit/scripts/autospec-run.py --dry-run           # print the order, run nothing
 Runner (required): --runner PATH or $AUTOSPEC_RUNNER. It is called as
   <runner> --project <repo root> --keep -- run "<task prompt>"
-which is the interface of opencode-docker's run.sh (https://github.com/Hudec23/opencode-docker):
+which is the interface of opencodocker's run.sh (https://github.com/Hudec23/opencodocker):
 --keep reuses its Docker-in-Docker daemon (and image cache) between tasks, `run` is opencode's
 non-interactive mode. Any wrapper with that interface works.
-Run it from a terminal: run.sh uses `docker run -it`, which needs a TTY on stdin.
+Run it from the project root, in a terminal: run.sh uses `docker run -it`, which needs a TTY on stdin.
 """
 
 from __future__ import annotations
@@ -48,7 +48,15 @@ from pathlib import Path
 
 import autospec_yaml
 
-ROOT = Path(__file__).resolve().parents[1]
+def _project_root() -> Path:
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    if r.returncode != 0 or not (Path(r.stdout.strip()) / ".autospec/state.json").is_file():
+        sys.exit("[autospec-run] run from the project root (a git repo with .autospec/state.json)")
+    return Path(r.stdout.strip()).resolve()
+
+
+ROOT = _project_root()
+KIT_REL = Path(__file__).resolve().parents[1].relative_to(ROOT).as_posix()  # .autospec/kit
 STATE_REL = ".autospec/state.json"
 REPORT_REL = ".autospec/REPORT.md"
 STATE = ROOT / STATE_REL
@@ -78,7 +86,7 @@ def load_task(task_id: str) -> dict:
     try:
         fm = autospec_yaml.frontmatter(path.read_text())
     except (OSError, ValueError) as e:
-        sys.exit(f"{path.relative_to(ROOT)}: {e} (run scripts/autospec-check.py)")
+        sys.exit(f"{path.relative_to(ROOT)}: {e} (run .autospec/kit/scripts/autospec-check.py)")
     for k in ("edit", "verify", "expect_fail", "depends_on", "locked"):
         fm[k] = fm.get(k) or []
     fm.setdefault("max_attempts", 3)
@@ -91,7 +99,7 @@ def load_service(name: str) -> dict:
     try:
         return autospec_yaml.load(path.read_text())
     except (OSError, ValueError) as e:
-        sys.exit(f"{path.relative_to(ROOT)}: {e} (run scripts/autospec-check.py)")
+        sys.exit(f"{path.relative_to(ROOT)}: {e} (run .autospec/kit/scripts/autospec-check.py)")
 
 
 # ── state ─────────────────────────────────────────────────────────────────────
@@ -231,7 +239,7 @@ def agent_cmd(runner: str, prompt: str) -> list[str]:
 
 def prompt_for(tid: str, attempt: int, feedback: Path) -> str:
     p = (
-        f"You are the executor. Do exactly one task: plan/tasks/{tid}.md. Follow AGENTS.md. "
+        f"You are the executor. Do exactly one task: plan/tasks/{tid}.md. Follow AGENTS.md and {KIT_REL}/EXECUTOR.md. "
         f"Edit only the files under `edit:`. Do not start other tasks, do not touch "
         f".autospec/state.json, do not run git. Stop when its verify commands pass."
     )
@@ -432,7 +440,7 @@ def main() -> int:
             print(f"{e['status']:8} {tid}  deps={load_task(tid)['depends_on']}")
         return 0
     if not args.runner:
-        sys.exit("no runner: pass --runner PATH or set $AUTOSPEC_RUNNER (e.g. opencode-docker/run.sh)")
+        sys.exit("no runner: pass --runner PATH or set $AUTOSPEC_RUNNER (e.g. opencodocker/run.sh)")
     if not Path(runner).is_file():
         sys.exit(f"runner not found: {runner}")
     require_clean()

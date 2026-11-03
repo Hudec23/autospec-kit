@@ -39,7 +39,7 @@ match. "No conflicts" without these rows is not a scan you ran.
 
 9. Bring up the dev/test compose and check `docker compose ps`: every infra container is
    `healthy`, none `Exited`. Run every service's `baseline_tests`.
-10. `python3 scripts/autospec-run.py --dry-run` parses every task and lists them all; the first
+10. `python3 .autospec/kit/scripts/autospec-run.py --dry-run` parses every task and lists them all; the first
    tasks have no unmet `depends_on`.
 
 Fix every finding directly in the files, then re-run the checker (autospec-tasks §D).

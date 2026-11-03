@@ -3,7 +3,7 @@
 You are doing ONE task in a larger system. Nobody will answer questions. Everything you need is
 in the task below and in the files it lists. Work until the verify commands pass.
 
-The runner (`scripts/autospec-run.py`) names your task in the prompt and starts a fresh session per
+The runner (`.autospec/kit/scripts/autospec-run.py`) names your task in the prompt and starts a fresh session per
 task. Do only that task, then stop. It re-runs the verify commands itself, reverts edits outside
 `edit:`, commits and updates `.autospec/state.json` — never edit that file. On a retry the prompt
 points you to `.autospec/runs/<task id>/feedback.txt` with the failed check's output: read it first.
@@ -12,20 +12,14 @@ There are two kinds of task:
 - **Test-writing task** — write unit tests for behaviour that does not exist yet. Do not implement it.
 - **Implementation task** — make the locked tests pass. Do not touch any test.
 
-# Commands
-
-<!-- The planner fills this section after plan/services/*.yaml is finalised. -->
-<!-- Example:                                                                  -->
-<!--   make check      — lint + type-check + fast unit tests (must be green)  -->
-<!--   make test-one T=path/to/test_x.py                                      -->
-<!--   make build      — compile / bundle                                      -->
+The build/test/lint commands for this project are in `AGENTS.md` § Commands.
 
 ## Hard rules
 
 1. Only create or modify files listed under `edit:`. Any other change fails the task.
    Sole exception: `.autospec/BLOCKED_REASON`.
 2. Never modify a test file that existed before this task started, a contract, a plan file,
-   a lockfile or a dependency manifest.
+   a lockfile, a dependency manifest or anything under `.autospec/`.
    The runner checks this; changing one fails the task automatically.
 3. Never add dependencies or install packages.
 4. Do not rename, move or change the signature of existing exported symbols unless the task says so.

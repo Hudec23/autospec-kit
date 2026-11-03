@@ -50,7 +50,7 @@ Run them. Do not continue until every service is green.
 
 ## B. Features + acceptance tests (you write these, now)
 
-1. List every user-visible capability in `plan/features.yaml` (`templates/features.yaml`).
+1. List every user-visible capability in `plan/features.yaml` (`.autospec/kit/templates/features.yaml`).
 2. For each feature, write 1–2 acceptance tests through the public interface (HTTP call, CLI run,
    event in → event/DB out). Cover the main path and the most important failure from the contract.
    Cross-service features go in `tests/e2e/` against `docker compose up`.
@@ -64,7 +64,7 @@ These are the independent definition of "done". They must not be written by the 
 
 For each unit of behaviour, write a **pair**:
 
-| | Test task `T-api-007t` (`templates/task-test.md`) | Impl task `T-api-007` (`templates/task-impl.md`) |
+| | Test task `T-api-007t` (`.autospec/kit/templates/task-test.md`) | Impl task `T-api-007` (`.autospec/kit/templates/task-impl.md`) |
 |---|---|---|
 | kind | `test` | `impl` |
 | edit | the new test file(s) only | the stub/source files only — never tests |
@@ -98,7 +98,7 @@ is locked to an acceptance or existing test that exercises it.
 
 Hard limits:
 - `edit:` at most `max_edit_files` (`plan/executor.yaml`) files. Every file the task creates or changes is listed. Nothing else.
-- Required reading (AGENTS.md + task file + `read:` + `locked:` files) ≤ `max_read_tokens`. Paste the exact
+- Required reading (AGENTS.md + EXECUTOR.md + task file + `read:` + `locked:` files) ≤ `max_read_tokens`. Paste the exact
   snippet (signature, type, schema fragment) into Context instead of listing a large file.
 - No two tasks that could run in either order edit the same file — add `depends_on`.
 - One concern per task. If you write "and" in the title, split it.
@@ -112,7 +112,7 @@ Initialise `.autospec/state.json` (every task `pending`), then run the checker f
 ```sh
 docker run --rm -v "$PWD":/w -w /w python:3.12.7-slim sh -c \
   'pip install -q --root-user-action=ignore --disable-pip-version-check pyyaml==6.0.2 \
-   && python scripts/autospec-check.py'
+   && python .autospec/kit/scripts/autospec-check.py'
 ```
 
 It writes `plan/TRACEABILITY.md` (never edit that by hand) and fails on: a requirement no feature
