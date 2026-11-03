@@ -3,12 +3,12 @@
 A set of structured prompts and templates for designing a multi-service system so a weak local model can implement it unattended. You bring the runner (e.g. [opencode-docker](https://github.com/Hudec23/opencode-docker)).
 
 ```
-planning/          Claude prompts — run in order during phase 1
-  01-system.md     Interview → plan/SYSTEM.md + plan/services/*.yaml
-  02-contracts.md  Freeze every cross-service interface in contracts/
-  03-tasks.md      Walking skeleton, acceptance tests, task pairs
-  04-audit.md      Claude audits the plan as the weak executor
-  05-unblock.md    Diagnose and fix blocked tasks after a run
+.claude/skills/        Planning steps, run in order in Claude Code as slash commands
+  autospec-system      Interview → plan/SYSTEM.md, plan/executor.yaml, plan/services/*.yaml
+  autospec-contracts   Freeze every cross-service interface in contracts/
+  autospec-tasks       Walking skeleton, acceptance tests, task pairs
+  autospec-audit       Claude audits the plan as the weak executor
+  autospec-unblock     Diagnose and fix blocked tasks after a run
 
 templates/         Copy these into plan/ when Claude writes output
   SYSTEM.md        Architecture doc template
@@ -26,19 +26,20 @@ scripts/
 CLAUDE.md                      Loaded by Claude Code — planner instructions (phase 1)
 AGENTS.md                      Loaded by opencode — executor rules (phase 2)
 .opencode/agents/rescue.md     Stronger-model subagent opencode spawns when executor is stuck
+opencode.json                  Hides the planner's autospec-* skills from the executor
 ```
 
 ## How to use
 
 ### Phase 1 — plan with Claude
 
-Run each `planning/` prompt in Claude Code, in order (step 3 builds and runs code in Docker, so claude.ai alone is not enough). Each ends with a self-check; don't move on until Claude reports zero open questions.
+Run each planning skill in Claude Code, in order (step 3 builds and runs code in Docker, so claude.ai alone is not enough). Each ends with a self-check; don't move on until Claude reports zero open questions.
 
-1. `planning/01-system.md` — Claude interviews you, writes `plan/SYSTEM.md` and `plan/services/*.yaml`.  
+1. `/autospec-system` — Claude interviews you, writes `plan/SYSTEM.md`, `plan/executor.yaml` and `plan/services/*.yaml`.  
    **This is the only step that asks you questions.**
-2. `planning/02-contracts.md` — freezes every cross-service interface in `contracts/`.
-3. `planning/03-tasks.md` — walking skeleton with stubs, acceptance tests, and test/impl task pairs.
-4. `planning/04-audit.md` — Claude audits the plan as if it were the weak executor.
+2. `/autospec-contracts` — freezes every cross-service interface in `contracts/`.
+3. `/autospec-tasks` — walking skeleton with stubs, acceptance tests, and test/impl task pairs.
+4. `/autospec-audit` — Claude audits the plan as if it were the weak executor.
 5. Commit everything. That commit is the baseline the runner works from.
 
 ### Phase 2 — unattended build
@@ -50,7 +51,7 @@ Run each `planning/` prompt in Claude Code, in order (step 3 builds and runs cod
 3. runs the gate itself — the agent never grades its own work — inside the agent's dind container (`oc-dind-<project>`, override with `$AUTOSPEC_DIND`), so checks reuse the images the agent already built: `verify:` must pass, `expect_fail:` must fail, then the service's `regression` (build, lint, `baseline_tests`, tests locked by done impl tasks) must pass,
 4. commits on green and marks the task `done`; otherwise retries with the failing command's output as feedback (`.autospec/runs/<task>/feedback.txt`), then marks it `blocked` (dependents become `skipped`).
 
-It needs a clean working tree to start (`.autospec/runs/`, `.autospec/BLOCKED_REASON` and `.autospec/STOP` gitignored) and ends by committing `.autospec/REPORT.md`, the input for `planning/05-unblock.md`.
+It needs a clean working tree to start (`.autospec/runs/`, `.autospec/BLOCKED_REASON` and `.autospec/STOP` gitignored) and ends by committing `.autospec/REPORT.md`, the input for `/autospec-unblock`.
 
 ```sh
 export AUTOSPEC_RUNNER=~/path/to/opencode-docker/run.sh
@@ -60,7 +61,7 @@ python3 scripts/autospec-run.py --max-tasks 3      # short trial
 python3 scripts/autospec-run.py                    # loop until nothing is runnable
 ```
 
-Run it from a terminal (opencode-docker uses `docker run -it`). Ctrl-C stops the loop and leaves the current task pending; `touch .autospec/STOP` stops it after the current task. Logs land in `.autospec/runs/<task>/`. opencode picks up `AGENTS.md` from the project root automatically. Blocked tasks: `planning/05-unblock.md`.
+Run it from a terminal (opencode-docker uses `docker run -it`). Ctrl-C stops the loop and leaves the current task pending; `touch .autospec/STOP` stops it after the current task. Logs land in `.autospec/runs/<task>/`. opencode picks up `AGENTS.md` from the project root automatically. Blocked tasks: `/autospec-unblock`.
 
 ## What each rule produces
 

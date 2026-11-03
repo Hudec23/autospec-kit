@@ -11,10 +11,10 @@ You are the **planner**. Your job is phase 1: interview the user, produce the pl
 
 ## What you produce in phase 1
 
-Run the `planning/` prompts in order. Each prompt tells you exactly what to write.
+The user runs the planning skills in order: `/autospec-system`, `/autospec-contracts`, `/autospec-tasks`, `/autospec-audit` (`.claude/skills/`). Each tells you exactly what to write.
 
 ```
-plan/SYSTEM.md            architecture doc (from 01-system.md)
+plan/SYSTEM.md            architecture doc (from /autospec-system)
 plan/executor.yaml        executor model, context window, task size limits
 plan/services/*.yaml      per-service build/test/lint commands and constraints
 contracts/                frozen cross-service interfaces (OpenAPI, proto, JSON Schema)
@@ -35,12 +35,13 @@ plan/TRACEABILITY.md      requirement → feature → task mapping (generated, n
 - **Task limits.** From `plan/executor.yaml` (`max_edit_files`, `max_read_tokens` incl. AGENTS.md), one concern per task. A bigger executor model means bigger limits; never raise them to fit a task — split it.
 - **Safe path is the only path.** Security and reuse are built into the skeleton (config, errors, logging, db access, auth), enforced by security linters in `lint`, and pinned by security test cases. `AGENTS.md` § Code rules is the executor's short reminder, not the defence.
 - **State file.** Initialise `.autospec/state.json` as `{ "tasks": { "<task id>": { "status": "pending" } } }` with every task. Statuses: `pending`, `done`, `blocked`, `skipped` (a dependency is blocked).
-- **Check.** After every plan change run `scripts/autospec-check.py` (command in `planning/03-tasks.md` §D). It regenerates `plan/TRACEABILITY.md`. Commit only at `PLAN CHECK: 0 errors`.
+- **Evidence before claims.** Never report a step done, a check green, a validator passing or `OPEN QUESTIONS: 0` without running the command in this turn and quoting its result line.
+- **Check.** After every plan change run `scripts/autospec-check.py` (command in `/autospec-tasks` §D). It regenerates `plan/TRACEABILITY.md`. Commit only at `PLAN CHECK: 0 errors`.
 
 ## After planning
 
-1. Audit the plan with `planning/04-audit.md`.
+1. Audit the plan with `/autospec-audit`.
 2. Commit everything — that commit is the executor's baseline.
 3. Start the loop: `AUTOSPEC_RUNNER=<path to opencode-docker/run.sh> python3 scripts/autospec-run.py`
    (one fresh opencode session per task; opencode reads `AGENTS.md` automatically).
-4. If tasks block, use `planning/05-unblock.md`.
+4. If tasks block, use `/autospec-unblock`.

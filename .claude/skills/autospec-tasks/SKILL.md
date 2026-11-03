@@ -1,3 +1,9 @@
+---
+name: autospec-tasks
+description: autospec planning step 3 — walking skeleton, acceptance tests, test/impl task pairs, plan check. Run after autospec-contracts.
+disable-model-invocation: true
+---
+
 # Planning step 3 — Skeleton, stubs, acceptance tests, task pairs
 
 Read `plan/SYSTEM.md`, `plan/services/*`, `contracts/`. Produce the complete, ordered work
@@ -71,6 +77,14 @@ For each unit of behaviour, write a **pair**:
 Regression after every task = build + lint + `baseline_tests` + the locked tests of all `done`
 tasks (via `test_files`). Never the full `test` suite: acceptance tests of unfinished features
 are red by design. The full suite is expected green only when every task is done.
+
+Before the cases of each feature, list the inputs a real user or attacker would send that the
+contract is silent on (the likely failures no test covers yet); each one becomes a case in the
+task that owns that code.
+
+Every task's **Context** names what it consumes (exact signatures from earlier tasks) and what it
+produces (exact exported names and types later tasks rely on). Later tasks copy those signatures
+verbatim; a mismatch is a plan bug, not the executor's.
 
 Writing **Test cases** is the part that matters: one line per case, concrete values, exact
 expected status/error code/return value. Include happy path, every error the contract defines,

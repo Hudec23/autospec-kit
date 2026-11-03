@@ -11,7 +11,7 @@ are all done:
   4. pass -> commit the task's files + state.json, status done;
      fail -> retry with the failing check's output as feedback, up to max_attempts;
      then revert, status blocked. Tasks depending on a blocked task become skipped.
-At the end it writes and commits .autospec/REPORT.md (input for planning/05-unblock.md).
+At the end it writes and commits .autospec/REPORT.md (input for /autospec-unblock).
 
 Logs: .autospec/runs/<task id>/ (gitignored).
 
@@ -401,7 +401,7 @@ def write_report(state: dict) -> None:
         f"Generated {now} at commit {git('rev-parse', '--short', 'HEAD').stdout.strip()}. "
         + ", ".join(f"{s}: {counts.get(s, 0)}" for s in ("done", "blocked", "skipped", "pending")),
         "",
-        "Input for planning/05-unblock.md. Logs: `.autospec/runs/<task>/` on the machine that ran the loop.",
+        "Input for /autospec-unblock. Logs: `.autospec/runs/<task>/` on the machine that ran the loop.",
     ]
     for status in ("blocked", "skipped", "pending"):
         rows = [(tid, e) for tid, e in tasks.items() if e["status"] == status]

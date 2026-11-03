@@ -1,3 +1,9 @@
+---
+name: autospec-audit
+description: autospec planning step 4 — audit every task as the weak executor, fix findings, decide READY FOR UNATTENDED RUN. Run after autospec-tasks.
+disable-model-invocation: true
+---
+
 # Planning step 4 — Audit as the executor
 
 Pretend you are the executor in `plan/executor.yaml`, that sees ONE task file plus the files it
@@ -27,12 +33,16 @@ dependency order and, for each, answer:
 
 Then, once for the whole plan:
 
+**Conflict scan.** One row for every pair of tasks that share a file or an interface: what one
+produces against what the other consumes (names, signatures, types, error codes) and whether they
+match. "No conflicts" without these rows is not a scan you ran.
+
 9. Bring up the dev/test compose and check `docker compose ps`: every infra container is
    `healthy`, none `Exited`. Run every service's `baseline_tests`.
 10. `python3 scripts/autospec-run.py --dry-run` parses every task and lists them all; the first
    tasks have no unmet `depends_on`.
 
-Fix every finding directly in the files, then re-run the checker (step 3D).
+Fix every finding directly in the files, then re-run the checker (autospec-tasks §D).
 
-Output a table: task id | findings | fixed (y/n). End with "READY FOR UNATTENDED RUN: yes/no" — yes only with
+Output the conflict-scan table, then a table: task id | findings | fixed (y/n). End with "READY FOR UNATTENDED RUN: yes/no" — yes only with
 `PLAN CHECK: 0 errors`.

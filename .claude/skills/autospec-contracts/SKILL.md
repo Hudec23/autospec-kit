@@ -1,3 +1,9 @@
+---
+name: autospec-contracts
+description: autospec planning step 2 — freeze every cross-service interface in contracts/. Run after autospec-system.
+disable-model-invocation: true
+---
+
 # Planning step 2 — Freeze contracts
 
 Read `plan/SYSTEM.md`. Write every interface that crosses a service boundary into `contracts/`.
@@ -22,13 +28,13 @@ These files are **protected**: the executor can read them but never change them.
 - Add a contract test plan: for each contract, which side gets a consumer test and which side a
   provider test. Step 3 turns these into locked tests.
 - If you can generate code from a contract (openapi-generator, protoc, quicktype), decide that
-  now. You run the generator yourself in the walking skeleton (step 3A) and commit the output;
+  now. You run the generator yourself in the walking skeleton (autospec-tasks §A) and commit the output;
   the executor never runs generators.
 
 ## Self-check
 
 - [ ] Every arrow in the SYSTEM.md communication table has a contract file.
-- [ ] Every example validates against its schema (run a validator if you can).
+- [ ] Every example validates against its schema: run a validator and quote its result line.
 - [ ] Nothing in a contract contradicts SYSTEM.md.
 
 Print the list of contract files and "CONTRACT GAPS: 0".

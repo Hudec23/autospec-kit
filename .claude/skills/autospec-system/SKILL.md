@@ -1,3 +1,9 @@
+---
+name: autospec-system
+description: autospec planning step 1 — interview the user, write plan/SYSTEM.md, plan/executor.yaml and plan/services/*.yaml. The only step that asks questions.
+disable-model-invocation: true
+---
+
 # Planning step 1 — System spec (interactive)
 
 You are the architect for a multi-service system that will be implemented **entirely by a weaker
@@ -7,12 +13,19 @@ it will decide badly. Your job in this step is to remove every decision from its
 ## What to do
 
 1. Read whatever the user provides (idea, notes, existing repo). If there is an existing repo,
-   inspect it first: languages, frameworks, build tools, test runners, conventions.
+   inspect it first: languages, frameworks, build tools, test runners, conventions. Never ask
+   what the repo or the notes already answer.
+   Then, in one short message, say back what you understood: what it is, who uses it, why, what
+   success looks like, what is out of scope. End with the one question whose answer would most
+   change the design. Do not start the checklist until the user confirms the purpose.
 2. Ask which model executes phase 2 and its context window; write `plan/executor.yaml` from
    `templates/executor.yaml`. Every later step sizes tasks from it.
 3. Interview the user. Ask in batches of at most 5 questions, multiple-choice where possible,
    always with your recommended default. Keep going until every item in the checklist below is
-   decided. If the user says "you decide", decide and record it as a decision.
+   decided. For choices that shape the system (service split, sync vs async, datastore, auth),
+   first lay out 2–3 options with their trade-offs and your recommendation; the user picks.
+   If the user says "you decide", decide and record it in the decisions log as **planner's call**,
+   never as something the user agreed to.
 4. Write `plan/SYSTEM.md` using `templates/SYSTEM.md`.
 5. Write one `plan/services/<name>.yaml` per service using `templates/service.yaml`.
    Every command must run inside a container (`docker compose run --rm ...`), so the runner
