@@ -1,4 +1,4 @@
-# plan/services/<name>.yaml
+# .autospec/plan/services/<name>.yaml
 # Every command runs from the repo root inside the runner container (which has Docker via DinD).
 # Run toolchains in their own containers so the runner image stays language-agnostic.
 name: api

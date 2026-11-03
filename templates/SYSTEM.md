@@ -5,7 +5,7 @@ One paragraph. Who uses it, what it does.
 
 ## 1a. Requirements
 One row per requirement. `Covered by`: `features` (listed by at least one feature in
-plan/features.yaml) or `skeleton` (cross-cutting, proven by the walking skeleton's `baseline_tests`).
+.autospec/plan/features.yaml) or `skeleton` (cross-cutting, proven by the walking skeleton's `baseline_tests`).
 
 | ID | Requirement | Kind | Covered by |
 |---|---|---|---|
@@ -48,7 +48,7 @@ Each row is implemented once in the walking skeleton; the executor only calls it
 | DB access | parameterized queries only, via repo helpers | services/api/src/db/ |
 | AuthN / AuthZ | default deny; route table lists who may call each route | services/api/src/auth.ts |
 | CORS | explicit origin list from config, never `*` | services/api/src/app.ts |
-| Static checks | security linter + secret scanner in every service's `lint` | plan/services/*.yaml |
+| Static checks | security linter + secret scanner in every service's `lint` | .autospec/plan/services/*.yaml |
 
 ## 6. Environment variables
 | Var | Service | Example | Required | Secret |
@@ -61,7 +61,7 @@ services/
   worker/     cmd/, internal/, go.mod
 contracts/
 tests/e2e/
-plan/
+.autospec/plan/
 ```
 
 ## 8. Conventions per language

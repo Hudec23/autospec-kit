@@ -6,8 +6,8 @@ disable-model-invocation: true
 
 # Planning step 3 — Skeleton, stubs, acceptance tests, task pairs
 
-Read `plan/SYSTEM.md`, `plan/services/*`, `contracts/`. Produce the complete, ordered work
-breakdown for an executor that is **much weaker than you** (`plan/executor.yaml`): fresh
+Read `.autospec/plan/SYSTEM.md`, `.autospec/plan/services/*`, `contracts/`. Produce the complete, ordered work
+breakdown for an executor that is **much weaker than you** (`.autospec/plan/executor.yaml`): fresh
 session per task, no memory of previous tasks, cannot ask questions, cannot add dependencies.
 
 Division of labour for tests (keeps your planning cost low):
@@ -36,7 +36,7 @@ For every service, commit a minimal skeleton so phase 2 starts from a green buil
 
 Once for the whole system:
 - a pinned `Dockerfile` per service and a root `docker-compose.yml` that starts the system,
-- `plan/services/integration.yaml` whose commands run `tests/e2e/` against that compose file.
+- `.autospec/plan/services/integration.yaml` whose commands run `tests/e2e/` against that compose file.
 - every infra container the tests use (database, cache, queue, object store, vector store, in
   the dev/test compose too) has a `healthcheck`, and everything that needs it waits with
   `depends_on: { condition: service_healthy }` — never `service_started`, which hides a container
@@ -50,7 +50,7 @@ Run them. Do not continue until every service is green.
 
 ## B. Features + acceptance tests (you write these, now)
 
-1. List every user-visible capability in `plan/features.yaml` (`.autospec/kit/templates/features.yaml`).
+1. List every user-visible capability in `.autospec/plan/features.yaml` (`.autospec/kit/templates/features.yaml`).
 2. For each feature, write 1–2 acceptance tests through the public interface (HTTP call, CLI run,
    event in → event/DB out). Cover the main path and the most important failure from the contract.
    Cross-service features go in `tests/e2e/` against `docker compose up`.
@@ -60,7 +60,7 @@ Run them. Do not continue until every service is green.
 
 These are the independent definition of "done". They must not be written by the executor.
 
-## C. Task files — `plan/tasks/T-<service>-<NNN>[t].md`
+## C. Task files — `.autospec/plan/tasks/T-<service>-<NNN>[t].md`
 
 For each unit of behaviour, write a **pair**:
 
@@ -97,7 +97,7 @@ Trivial glue (wiring a route, config, a DTO) may be an impl task with no test ta
 is locked to an acceptance or existing test that exercises it.
 
 Hard limits:
-- `edit:` at most `max_edit_files` (`plan/executor.yaml`) files. Every file the task creates or changes is listed. Nothing else.
+- `edit:` at most `max_edit_files` (`.autospec/plan/executor.yaml`) files. Every file the task creates or changes is listed. Nothing else.
 - Required reading (AGENTS.md + EXECUTOR.md + task file + `read:` + `locked:` files) ≤ `max_read_tokens`. Paste the exact
   snippet (signature, type, schema fragment) into Context instead of listing a large file.
 - No two tasks that could run in either order edit the same file — add `depends_on`.
@@ -115,10 +115,10 @@ docker run --rm -v "$PWD":/w -w /w python:3.12.7-slim sh -c \
    && python .autospec/kit/scripts/autospec-check.py'
 ```
 
-It writes `plan/TRACEABILITY.md` (never edit that by hand) and fails on: a requirement no feature
+It writes `.autospec/plan/TRACEABILITY.md` (never edit that by hand) and fails on: a requirement no feature
 covers, a feature without tasks or acceptance tests, a feature whose last task doesn't lock and
 run its acceptance tests, test/impl pairs that don't match, too many edit files or too much reading for
-`plan/executor.yaml`, a file read before any task writes it, unordered tasks editing the same file,
+`.autospec/plan/executor.yaml`, a file read before any task writes it, unordered tasks editing the same file,
 dependency cycles, a state file out of sync, a service `regression` that can't run, and any
 plan file `autospec-run.py` would read differently than YAML does (keep values on one line). Fix and re-run until `PLAN CHECK: 0 errors`.
 

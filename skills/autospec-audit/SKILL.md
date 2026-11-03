@@ -6,8 +6,8 @@ disable-model-invocation: true
 
 # Planning step 4 — Audit as the executor
 
-Pretend you are the executor in `plan/executor.yaml`, that sees ONE task file plus the files it
-lists, nothing else, and cannot ask anything. Go through every task in `plan/tasks/` in
+Pretend you are the executor in `.autospec/plan/executor.yaml`, that sees ONE task file plus the files it
+lists, nothing else, and cannot ask anything. Go through every task in `.autospec/plan/tasks/` in
 dependency order and, for each, answer:
 
 1. Could I start typing code within one minute of reading this? If I would need to search the
@@ -24,7 +24,7 @@ dependency order and, for each, answer:
    task lock and run its acceptance tests?
 5. Will I need a library, env var, migration, generated file or fixture that doesn't exist yet
    and isn't created by an earlier task? Add it to the skeleton or an earlier task.
-6. Does the task fit `plan/executor.yaml` (edit files, read budget), one concern?
+6. Does the task fit `.autospec/plan/executor.yaml` (edit files, read budget), one concern?
 7. Does the Do-not list cover the obvious traps (editing tests, changing contracts, adding deps,
    renaming exported symbols other tasks depend on)?
 8. Security: could I pass the tests while leaking a secret, skipping an auth check, string-building

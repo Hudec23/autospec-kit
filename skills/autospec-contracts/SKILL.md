@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Planning step 2 — Freeze contracts
 
-Read `plan/SYSTEM.md`. Write every interface that crosses a service boundary into `contracts/`.
+Read `.autospec/plan/SYSTEM.md`. Write every interface that crosses a service boundary into `contracts/`.
 These files are **protected**: the executor can read them but never change them.
 
 ## Produce
@@ -18,7 +18,7 @@ These files are **protected**: the executor can read them but never change them.
   payload, producer, consumers, delivery semantics (at-least-once? idempotency key?).
 - Shared enums / error codes: `contracts/shared/*.json`.
 - DB schemas are **not** contracts (they are private to a service) but write them now anyway in
-  `plan/services/<name>.schema.sql` or equivalent, so tasks can reference them.
+  `.autospec/plan/services/<name>.schema.sql` or equivalent, so tasks can reference them.
 
 ## Rules
 

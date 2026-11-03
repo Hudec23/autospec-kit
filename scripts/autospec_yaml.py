@@ -1,4 +1,4 @@
-"""Minimal YAML subset reader for task frontmatter and plan/services/*.yaml (stdlib only).
+"""Minimal YAML subset reader for task frontmatter and .autospec/plan/services/*.yaml (stdlib only).
 
 autospec-run.py runs on the host without PyYAML, so it reads plan files with this.
 autospec-check.py parses the same files with PyYAML too and fails if the two disagree, so a plan

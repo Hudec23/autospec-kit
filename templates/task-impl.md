@@ -1,9 +1,9 @@
 ---
 id: T-api-007
 kind: impl                        # implementation: make locked tests pass, never touch tests
-feature: F-orders-create          # must exist in plan/features.yaml
+feature: F-orders-create          # must exist in .autospec/plan/features.yaml
 title: Implement POST /orders handler
-service: api                      # must match plan/services/<service>.yaml, or "integration"
+service: api                      # must match .autospec/plan/services/<service>.yaml, or "integration"
 depends_on: [T-api-007t, T-api-004, T-api-006]   # T-api-007t = the test task that wrote the unit tests
 edit:                             # the ONLY files the executor may create or change (max_edit_files, no tests)
   - services/api/src/orders/create.ts     # stub written by Claude in planning; executor fills it in
@@ -45,7 +45,7 @@ handler function exported as `createOrderHandler`, errors via `httpError(code)`)
 4. Register the route in `services/api/src/routes.ts`: `app.post("/orders", createOrderHandler(deps))`.
 
 ## Do not
-- Do not edit any test file or anything under `contracts/` or `plan/`.
+- Do not edit any test file or anything under `contracts/` or `.autospec/plan/`.
 - Do not add npm dependencies.
 - Do not rename or change signatures of existing exported functions.
 - Do not catch errors and return 500 yourself; use `httpError`.

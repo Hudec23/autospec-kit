@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """autospec plan checker and traceability generator.
 
-Reads plan/SYSTEM.md (requirements table), plan/executor.yaml, plan/features.yaml,
-plan/tasks/*.md, plan/services/*.yaml and .autospec/state.json. Writes plan/TRACEABILITY.md and
+Reads .autospec/plan/SYSTEM.md (requirements table), .autospec/plan/executor.yaml, .autospec/plan/features.yaml,
+.autospec/plan/tasks/*.md, .autospec/plan/services/*.yaml and .autospec/state.json. Writes .autospec/plan/TRACEABILITY.md and
 exits 1 if the plan breaks any rule. Re-run it after every plan change.
 
 Run from the project root (needs only Docker):
@@ -41,10 +41,10 @@ def err(where, msg):
 
 def load_requirements(root):
     """Rows of the markdown table under the '## ... Requirements' heading."""
-    path = root / "plan/SYSTEM.md"
+    path = root / ".autospec/plan/SYSTEM.md"
     reqs = {}
     if not path.exists():
-        err("plan/SYSTEM.md", "missing")
+        err(".autospec/plan/SYSTEM.md", "missing")
         return reqs
     in_section = False
     for n, line in enumerate(path.read_text().splitlines(), 1):
@@ -56,7 +56,7 @@ def load_requirements(root):
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if cells[0] == "ID" or set(cells[0]) <= set("-: "):
             continue  # header or separator row
-        where = f"plan/SYSTEM.md:{n}"
+        where = f".autospec/plan/SYSTEM.md:{n}"
         if len(cells) < 4:
             err(where, "requirement row needs 4 columns: ID | Requirement | Kind | Covered by")
             continue
@@ -71,7 +71,7 @@ def load_requirements(root):
             err(where, f"{rid}: 'Covered by' must be 'features' or 'skeleton', got {covered!r}")
         reqs[rid] = {"text": text, "kind": kind, "covered": covered}
     if not reqs:
-        err("plan/SYSTEM.md", "no requirement rows found under a '## ... Requirements' heading")
+        err(".autospec/plan/SYSTEM.md", "no requirement rows found under a '## ... Requirements' heading")
     return reqs
 
 
@@ -102,49 +102,49 @@ def load_yaml(path, runner_reads=False):
 
 
 def load_executor(root):
-    """Task size limits from plan/executor.yaml."""
-    path = root / "plan/executor.yaml"
+    """Task size limits from .autospec/plan/executor.yaml."""
+    path = root / ".autospec/plan/executor.yaml"
     if not path.exists():
-        err("plan/executor.yaml", "missing (copy .autospec/kit/templates/executor.yaml)")
+        err(".autospec/plan/executor.yaml", "missing (copy .autospec/kit/templates/executor.yaml)")
         return {"max_read_tokens": 16000, "max_edit_files": 3}
     ex = load_yaml(path)
     ctx = ex.get("context_tokens")
     if not isinstance(ctx, int) or ctx <= 0:
-        err("plan/executor.yaml", "context_tokens must be a positive integer")
+        err(".autospec/plan/executor.yaml", "context_tokens must be a positive integer")
         ctx = 65536
     ex.setdefault("max_read_tokens", ctx // 4)
     ex.setdefault("max_edit_files", 3)
     for key in ("max_read_tokens", "max_edit_files"):
         if not isinstance(ex[key], int) or ex[key] <= 0:
-            err("plan/executor.yaml", f"{key} must be a positive integer")
+            err(".autospec/plan/executor.yaml", f"{key} must be a positive integer")
     if isinstance(ex["max_read_tokens"], int) and ex["max_read_tokens"] > ctx // 2:
-        err("plan/executor.yaml", f"max_read_tokens {ex['max_read_tokens']} leaves less than half of "
+        err(".autospec/plan/executor.yaml", f"max_read_tokens {ex['max_read_tokens']} leaves less than half of "
             f"context_tokens {ctx} for reasoning and tool output")
     return ex
 
 
 def load_services(root):
     services = {}
-    for p in sorted((root / "plan/services").glob("*.yaml")):
+    for p in sorted((root / ".autospec/plan/services").glob("*.yaml")):
         services[p.stem] = load_yaml(p, runner_reads=True)
     if not services:
-        err("plan/services", "no <name>.yaml files")
+        err(".autospec/plan/services", "no <name>.yaml files")
     return services
 
 
 def load_features(root):
-    path = root / "plan/features.yaml"
+    path = root / ".autospec/plan/features.yaml"
     if not path.exists():
-        err("plan/features.yaml", "missing")
+        err(".autospec/plan/features.yaml", "missing")
         return {}
     features = {}
     for f in load_yaml(path).get("features") or []:
         fid = f.get("id")
         if not fid or not str(fid).startswith("F-"):
-            err("plan/features.yaml", f"feature id {fid!r} must start with F-")
+            err(".autospec/plan/features.yaml", f"feature id {fid!r} must start with F-")
             continue
         if fid in features:
-            err("plan/features.yaml", f"duplicate feature id {fid}")
+            err(".autospec/plan/features.yaml", f"duplicate feature id {fid}")
         for key in ("requirements", "contracts", "acceptance"):
             f[key] = f.get(key) or []
         features[fid] = f
@@ -153,8 +153,8 @@ def load_features(root):
 
 def load_tasks(root):
     tasks = {}
-    for p in sorted((root / "plan/tasks").glob("T-*.md")):
-        where = f"plan/tasks/{p.name}"
+    for p in sorted((root / ".autospec/plan/tasks").glob("T-*.md")):
+        where = f".autospec/plan/tasks/{p.name}"
         text = p.read_text()
         m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
         if not m:
@@ -177,7 +177,7 @@ def load_tasks(root):
         fm["_chars"] = len(text)
         tasks[p.stem] = fm
     if not tasks:
-        err("plan/tasks", "no T-*.md task files")
+        err(".autospec/plan/tasks", "no T-*.md task files")
     return tasks
 
 
@@ -207,7 +207,7 @@ def load_state(root, tasks):
 
 def check_services(root, services):
     for name, svc in services.items():
-        where = f"plan/services/{name}.yaml"
+        where = f".autospec/plan/services/{name}.yaml"
         cmds = svc.get("commands") or {}
         steps = svc.get("regression") or sorted(REGRESSION_STEPS)
         for step in steps:
@@ -271,25 +271,25 @@ def critical_path(tasks):
 def check_requirements(reqs, features):
     for fid, f in features.items():
         if not f["requirements"]:
-            err("plan/features.yaml", f"{fid} lists no requirements")
+            err(".autospec/plan/features.yaml", f"{fid} lists no requirements")
         for rid in f["requirements"]:
             if rid not in reqs:
-                err("plan/features.yaml", f"{fid} references unknown requirement {rid}")
+                err(".autospec/plan/features.yaml", f"{fid} references unknown requirement {rid}")
     for rid, r in reqs.items():
         if r["covered"] == "features" and not any(rid in f["requirements"] for f in features.values()):
-            err("plan/SYSTEM.md", f"{rid} is covered by features, but no feature lists it")
+            err(".autospec/plan/SYSTEM.md", f"{rid} is covered by features, but no feature lists it")
 
 
 def check_features(root, features):
     for fid, f in features.items():
         if not f["acceptance"]:
-            err("plan/features.yaml", f"{fid} has no acceptance tests")
+            err(".autospec/plan/features.yaml", f"{fid} has no acceptance tests")
         for path in f["acceptance"]:
             if not (root / path).exists():
-                err("plan/features.yaml", f"{fid}: acceptance test {path} does not exist")
+                err(".autospec/plan/features.yaml", f"{fid}: acceptance test {path} does not exist")
         for ref in f["contracts"]:
             if not (root / ref.split("#")[0]).exists():
-                err("plan/features.yaml", f"{fid}: contract {ref} does not exist")
+                err(".autospec/plan/features.yaml", f"{fid}: contract {ref} does not exist")
 
 
 def check_tasks(root, tasks, features, services, anc, executor):
@@ -311,20 +311,20 @@ def check_tasks(root, tasks, features, services, anc, executor):
         if kind not in ("test", "impl"):
             err(w, f"kind {kind!r} must be 'test' or 'impl'")
         if t.get("service") and t["service"] not in services:
-            err(w, f"service {t['service']!r} has no plan/services/{t['service']}.yaml")
+            err(w, f"service {t['service']!r} has no .autospec/plan/services/{t['service']}.yaml")
         if t.get("feature") and t["feature"] not in features:
-            err(w, f"feature {t['feature']!r} not in plan/features.yaml")
+            err(w, f"feature {t['feature']!r} not in .autospec/plan/features.yaml")
         for d in t["depends_on"]:
             if d not in tasks:
                 err(w, f"depends_on unknown task {d}")
         if not t["edit"]:
             err(w, "edit: is empty")
         if len(t["edit"]) > max_edit:
-            err(w, f"edits {len(t['edit'])} files (max {max_edit}, plan/executor.yaml)")
+            err(w, f"edits {len(t['edit'])} files (max {max_edit}, .autospec/plan/executor.yaml)")
         if not t["verify"]:
             err(w, "verify: is empty")
         for path in t["edit"]:
-            if path.startswith(("contracts/", "plan/", ".autospec/")):
+            if path.startswith(("contracts/", ".autospec/")):
                 err(w, f"may not edit {path}")
         if kind == "test":
             if not t["expect_fail"]:
@@ -356,7 +356,7 @@ def check_tasks(root, tasks, features, services, anc, executor):
                 err(w, f"reads {path}, which does not exist and no earlier task writes it")
         if chars // CHARS_PER_TOKEN > max_read:
             err(w, f"required reading ~{chars // CHARS_PER_TOKEN} tokens incl. AGENTS.md + EXECUTOR.md "
-                f"(max {max_read}, plan/executor.yaml)")
+                f"(max {max_read}, .autospec/plan/executor.yaml)")
 
     if anc is None:
         return
@@ -368,7 +368,7 @@ def check_tasks(root, tasks, features, services, anc, executor):
         for i, a in enumerate(tids):
             for b in tids[i + 1:]:
                 if a not in anc[b] and b not in anc[a]:
-                    err("plan/tasks", f"{a} and {b} both edit {path} but neither depends on the other")
+                    err(".autospec/plan/tasks", f"{a} and {b} both edit {path} but neither depends on the other")
 
 
 def last_tasks(features, tasks, anc):
@@ -377,13 +377,13 @@ def last_tasks(features, tasks, anc):
     for fid, f in features.items():
         own = [tid for tid, t in tasks.items() if t.get("feature") == fid]
         if not own:
-            err("plan/features.yaml", f"{fid} has no tasks")
+            err(".autospec/plan/features.yaml", f"{fid} has no tasks")
             continue
         if anc is None:
             continue
         sinks = [t for t in own if not any(t in anc[o] for o in own if o != t)]
         if len(sinks) != 1:
-            err("plan/features.yaml", f"{fid} has {len(sinks)} final tasks ({', '.join(sinks)}); "
+            err(".autospec/plan/features.yaml", f"{fid} has {len(sinks)} final tasks ({', '.join(sinks)}); "
                 "add depends_on so exactly one comes last")
             continue
         last[fid] = sinks[0]
@@ -416,7 +416,7 @@ def render(reqs, features, tasks, last, status):
     out = [
         "# Traceability",
         "",
-        "Generated by `.autospec/kit/scripts/autospec-check.py` from plan/SYSTEM.md, plan/features.yaml, plan/tasks/",
+        "Generated by `.autospec/kit/scripts/autospec-check.py` from .autospec/plan/SYSTEM.md, .autospec/plan/features.yaml, .autospec/plan/tasks/",
         "and .autospec/state.json. Do not edit by hand; re-run the script.",
         "",
         "## Requirements",
@@ -479,7 +479,7 @@ def main():
     check_last_tasks(features, tasks, services, last)
 
     if not args.no_write:
-        (root / "plan/TRACEABILITY.md").write_text(render(reqs, features, tasks, last, status))
+        (root / ".autospec/plan/TRACEABILITY.md").write_text(render(reqs, features, tasks, last, status))
 
     for service in sorted(services):
         kinds = [t.get("kind") for t in tasks.values() if t.get("service") == service]

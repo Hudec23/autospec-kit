@@ -1,6 +1,6 @@
 ---
 name: autospec-system
-description: autospec planning step 1 — interview the user, write plan/SYSTEM.md, plan/executor.yaml and plan/services/*.yaml. The only step that asks questions.
+description: autospec planning step 1 — interview the user, write .autospec/plan/SYSTEM.md, .autospec/plan/executor.yaml and .autospec/plan/services/*.yaml. The only step that asks questions.
 disable-model-invocation: true
 ---
 
@@ -18,7 +18,7 @@ it will decide badly. Your job in this step is to remove every decision from its
    Then, in one short message, say back what you understood: what it is, who uses it, why, what
    success looks like, what is out of scope. End with the one question whose answer would most
    change the design. Do not start the checklist until the user confirms the purpose.
-2. Ask which model executes phase 2 and its context window; write `plan/executor.yaml` from
+2. Ask which model executes phase 2 and its context window; write `.autospec/plan/executor.yaml` from
    `.autospec/kit/templates/executor.yaml`. Every later step sizes tasks from it.
 3. Interview the user. Ask in batches of at most 5 questions, multiple-choice where possible,
    always with your recommended default. Keep going until every item in the checklist below is
@@ -26,8 +26,8 @@ it will decide badly. Your job in this step is to remove every decision from its
    first lay out 2–3 options with their trade-offs and your recommendation; the user picks.
    If the user says "you decide", decide and record it in the decisions log as **planner's call**,
    never as something the user agreed to.
-4. Write `plan/SYSTEM.md` using `.autospec/kit/templates/SYSTEM.md`.
-5. Write one `plan/services/<name>.yaml` per service using `.autospec/kit/templates/service.yaml`.
+4. Write `.autospec/plan/SYSTEM.md` using `.autospec/kit/templates/SYSTEM.md`.
+5. Write one `.autospec/plan/services/<name>.yaml` per service using `.autospec/kit/templates/service.yaml`.
    Every command must run inside a container (`docker compose run --rm ...`), so the runner
    only needs Docker. Pin every image tag and dependency version. `lint` includes a security
    linter and a secret scanner (e.g. semgrep or bandit / gosec / eslint-plugin-security, plus

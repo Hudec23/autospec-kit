@@ -8,7 +8,8 @@ You bring the sandbox runner: [opencodocker](https://github.com/Hudec23/opencodo
 
 ## Quick start
 
-The kit lives inside your project in `.autospec/kit/`. Your project root stays yours.
+The kit and your plan live in `.autospec/`. The project root holds only your app, plus three
+small stub files the tools need.
 
 ```sh
 # 1. In your project (an existing or new git repo with at least one commit), add the kit:
@@ -37,7 +38,7 @@ sh .autospec/kit/init.sh   # links new skills, if any
 git add -A && git commit -m "Update autospec kit"
 ```
 
-Only `.autospec/kit/` changes. Your plan, tasks, code and stub files are outside it, so a pull
+Only `.autospec/kit/` changes. Your plan, state, code and stub files are outside it, so a pull
 never conflicts with them. **Never edit files inside `.autospec/kit/` in a project.** Change the
 kit in this repo and pull instead, or the next pull can hit a merge conflict.
 
@@ -47,10 +48,10 @@ kit in this repo and pull instead, or the next pull can hit a merge conflict.
 your-project/
 ├── .autospec/
 │   ├── kit/              THE KIT. Read-only in your project, updated by subtree pull
+│   ├── plan/             yours: SYSTEM.md, executor.yaml, services/, features.yaml, tasks/T-*.md
 │   ├── state.json        task status (written by the planner, then the runner)
 │   ├── REPORT.md         last run's report (written by the runner)
 │   └── runs/             per-task logs (gitignored)
-├── plan/                 SYSTEM.md, executor.yaml, services/, features.yaml, tasks/T-*.md
 ├── contracts/            frozen interfaces between services
 ├── tests/e2e/            acceptance tests written by the planner
 ├── services/...          the code
@@ -78,7 +79,7 @@ PLANNER.md             planner rules (Claude Code, phase 1)
 EXECUTOR.md            executor rules (opencode, phase 2)
 init.sh                wires the kit into a project
 skills/autospec-*      planning steps, run in order as slash commands:
-  autospec-system        interview → plan/SYSTEM.md, plan/executor.yaml, plan/services/*.yaml
+  autospec-system        interview → .autospec/plan/SYSTEM.md, .autospec/plan/executor.yaml, .autospec/plan/services/*.yaml
   autospec-contracts     freeze every cross-service interface in contracts/
   autospec-tasks         walking skeleton, acceptance tests, test/impl task pairs
   autospec-audit         audit every task as the weak executor
@@ -86,7 +87,7 @@ skills/autospec-*      planning steps, run in order as slash commands:
 templates/             SYSTEM.md, executor.yaml, service.yaml, features.yaml, task-*.md,
                        and the AGENTS.md / opencode.json stubs init.sh copies
 scripts/
-  autospec-check.py    plan checker; generates plan/TRACEABILITY.md
+  autospec-check.py    plan checker; generates .autospec/plan/TRACEABILITY.md
   autospec-run.py      phase 2 task loop (python3 stdlib only)
   autospec_yaml.py     YAML subset reader shared by both
 opencode/rescue.md     prompt of the stronger-model subagent the executor calls when stuck
@@ -98,8 +99,8 @@ Run each skill in order. Step 3 builds and runs code in Docker, so Claude Code i
 just claude.ai. Each step ends with a self-check; don't move on until it reports zero open
 questions.
 
-1. `/autospec-system` — interviews you, writes `plan/SYSTEM.md`, `plan/executor.yaml` (which model
-   executes, its context window, task size limits) and `plan/services/*.yaml`.
+1. `/autospec-system` — interviews you, writes `.autospec/plan/SYSTEM.md`, `.autospec/plan/executor.yaml` (which model
+   executes, its context window, task size limits) and `.autospec/plan/services/*.yaml`.
    **The only step that asks you questions.**
 2. `/autospec-contracts` — freezes every cross-service interface in `contracts/`.
 3. `/autospec-tasks` — walking skeleton with stubs and security baseline, acceptance tests,
@@ -145,7 +146,7 @@ python3 .autospec/kit/scripts/autospec-run.py                    # loop until no
 | Must-fail check | Catches empty, skipped or always-true tests |
 | Regression after every task | A task can't silently break an earlier one |
 | Fresh session per task | No context bleed across tasks |
-| Edit-file and read limits from `plan/executor.yaml` | Leaves headroom for reasoning and tool output |
+| Edit-file and read limits from `.autospec/plan/executor.yaml` | Leaves headroom for reasoning and tool output |
 | Security baseline in the skeleton, security linter in `lint` | The safe way is the only way the executor sees |
 | Contracts frozen first | Services in different languages can be built in any order |
 | Each service tested in its own container | Runner needs only Docker, no language toolchains |
@@ -167,7 +168,7 @@ Most ideas here are established practice; the assembly and file formats are new.
 | Pinned deps, per-service build containers | Hermetic / reproducible builds |
 | `git reset` on failure, CI-style gates | Standard CI practice |
 
-What is new: the file formats (`plan/services/*.yaml`, task frontmatter, `features.yaml`), the
-token and file-count limits (`plan/executor.yaml`; defaults are heuristics for a 64K window —
+What is new: the file formats (`.autospec/plan/services/*.yaml`, task frontmatter, `features.yaml`), the
+token and file-count limits (`.autospec/plan/executor.yaml`; defaults are heuristics for a 64K window —
 adjust after your first real run), and the test-task / impl-task split with auto-locking applied
 to a weak local executor.

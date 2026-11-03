@@ -61,8 +61,8 @@ STATE_REL = ".autospec/state.json"
 REPORT_REL = ".autospec/REPORT.md"
 STATE = ROOT / STATE_REL
 REPORT = ROOT / REPORT_REL
-TASKS = ROOT / "plan/tasks"
-SERVICES = ROOT / "plan/services"
+TASKS = ROOT / ".autospec/plan/tasks"
+SERVICES = ROOT / ".autospec/plan/services"
 RUNS = ROOT / ".autospec/runs"
 BLOCKED = ROOT / ".autospec/BLOCKED_REASON"
 STOP = ROOT / ".autospec/STOP"
@@ -239,7 +239,7 @@ def agent_cmd(runner: str, prompt: str) -> list[str]:
 
 def prompt_for(tid: str, attempt: int, feedback: Path) -> str:
     p = (
-        f"You are the executor. Do exactly one task: plan/tasks/{tid}.md. Follow AGENTS.md and {KIT_REL}/EXECUTOR.md. "
+        f"You are the executor. Do exactly one task: .autospec/plan/tasks/{tid}.md. Follow AGENTS.md and {KIT_REL}/EXECUTOR.md. "
         f"Edit only the files under `edit:`. Do not start other tasks, do not touch "
         f".autospec/state.json, do not run git. Stop when its verify commands pass."
     )
@@ -285,7 +285,7 @@ def done_tests(service: str, state: dict) -> list[str]:
 
 
 def regression(task: dict, state: dict) -> list[tuple[str, str]]:
-    """(name, command) pairs of the service's regression, per plan/services/<service>.yaml."""
+    """(name, command) pairs of the service's regression, per .autospec/plan/services/<service>.yaml."""
     name = task["service"]
     svc = load_service(name)
     cmds = svc.get("commands") or {}
@@ -299,11 +299,11 @@ def regression(task: dict, state: dict) -> list[tuple[str, str]]:
         elif step == "done_tests":
             files += done_tests(name, state)
         else:
-            sys.exit(f"plan/services/{name}.yaml: unknown regression step {step!r}")
+            sys.exit(f".autospec/plan/services/{name}.yaml: unknown regression step {step!r}")
     files = list(dict.fromkeys(files))
     if files:
         if not cmds.get("test_files"):
-            sys.exit(f"plan/services/{name}.yaml: regression runs tests but commands.test_files is missing")
+            sys.exit(f".autospec/plan/services/{name}.yaml: regression runs tests but commands.test_files is missing")
         base = str(svc.get("path") or "").strip("/")
         rel = [f[len(base) + 1:] if base not in ("", ".") and f.startswith(base + "/") else f for f in files]
         out.append(("tests", cmds["test_files"].replace("{files}", " ".join(map(shlex.quote, rel)))))
